@@ -1,0 +1,10 @@
+# Person Image Trainer
+
+A small Codespaces app with person and not-person upload boxes, a train button,
+and an image scanner.
+
+## Start it
+
+```bash
+npm install
+npm start
