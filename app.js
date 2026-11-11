@@ -6,7 +6,7 @@ let scannedPrediction = "";
 
 const $ = id => document.getElementById(id);
 const statusEl = $("status");
-const EMBEDDING_SIZE = 1024;
+const EMBEDDING_SIZE = 1280;
 
 function setStatus(text) {
   statusEl.textContent = text;
