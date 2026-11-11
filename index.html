@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Image Trainer</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 32px 18px; background: #f6f9fc;
+      color: #18212b; font: 15px Arial, sans-serif;
+    }
+    h1 { text-align: center; font-size: 25px; margin: 0 0 8px; }
+    #status { text-align: center; color: #667085; min-height: 22px; }
+    .cards {
+      display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 24px; max-width: 1100px; margin: 26px auto;
+    }
+    .card {
+      background: white; border: 1px solid #e8edf2; border-radius: 22px;
+      padding: 22px; box-shadow: 0 14px 36px #24436612;
+      min-width: 0;
+    }
+    h2 { font-size: 20px; margin: 0 0 16px; }
+    .preview {
+      width: 100%; height: 170px; object-fit: cover; background: #edf1f5;
+      border-radius: 13px; display: block; margin-bottom: 14px;
+    }
+    .pick, button {
+      border: 0; border-radius: 11px; padding: 11px 14px;
+      font: inherit; cursor: pointer;
+    }
+    .pick { display: block; background: #f1f6fb; color: #245887; text-align: center; }
+    .pick input { display: none; }
+    button { background: #1262ed; color: white; font-weight: bold; }
+    button.secondary { background: #12bda9; }
+    button.light { background: #edf3f9; color: #245887; }
+    button:disabled { opacity: .5; cursor: wait; }
+    .wide { width: 100%; margin-top: 10px; }
+    .count { color: #667085; margin: 10px 0 0; }
+    .result {
+      background: #f5f8fb; border-radius: 13px; padding: 16px;
+      margin: 14px 0; text-align: center;
+    }
+    .prediction { font-size: 23px; font-weight: bold; }
+    .confidence { color: #1262ed; font-size: 32px; font-weight: bold; margin-top: 7px; }
+    .feedback { display: flex; gap: 10px; margin-top: 12px; }
+    .feedback button { flex: 1; }
+    .note { font-size: 12px; color: #667085; line-height: 1.45; }
+    @media (max-width: 760px) {
+      .cards { grid-template-columns: 1fr; max-width: 420px; }
+      .preview { height: 210px; }
+    }
+  </style>
+</head>
+<body>
+  <h1>Person Image Trainer</h1>
+  <div id="status">Loading image model…</div>
+
+  <main class="cards">
+    <section class="card">
+      <h2>TRAINER<br>Person</h2>
+      <img id="personPreview" class="preview" alt="Person training preview">
+      <label class="pick">＋ Add person images
+        <input id="personFiles" type="file" accept="image/*" multiple>
+      </label>
+      <p id="personCount" class="count">0 images added</p>
+      <button id="train" class="wide">Train / Update</button>
+    </section>
+
+    <section class="card">
+      <h2>TRAINER<br>Not Person</h2>
+      <img id="otherPreview" class="preview" alt="Not-person training preview">
+      <label class="pick">＋ Add not-person images
+        <input id="otherFiles" type="file" accept="image/*" multiple>
+      </label>
+      <p id="otherCount" class="count">0 images added</p>
+      <button id="clear" class="wide light">Clear saved training</button>
+    </section>
+
+    <section class="card">
+      <h2>SCAN</h2>
+      <img id="scanPreview" class="preview" alt="Image to scan">
+      <label class="pick">＋ Choose image to scan
+        <input id="scanFile" type="file" accept="image/*">
+      </label>
+      <button id="scan" class="wide">Scan image</button>
+
+      <div class="result">
+        <div id="prediction" class="prediction">No scan yet</div>
+        <div id="confidence" class="confidence">—%</div>
+      </div>
+
+      <div>Was the prediction correct?</div>
+      <div class="feedback">
+        <button id="correct" class="secondary" disabled>Correct</button>
+        <button id="incorrect" class="light" disabled>Incorrect</button>
+      </div>
+      <p id="feedbackNote" class="note"></p>
+    </section>
+  </main>
+
+<script>
+  const STORAGE_KEY = "simple-person-trainer-v1";
+  const MAX_IMAGES = 100;
+  let mobileNet;
+  let examples = { person: [], other: [] };
+  let classifier = null;
+  let lastPrediction = null;
+
+  const $ = id => document.getElementById(id);
+  function status(text) { $("status").textContent = text; }
+  function updateCounts() {
+    $("personCount").textContent = `${examples.person.length} images added`;
+    $("otherCount").textContent = `${examples.other.length} images added`;
+  }
+
+  async function load() {
+    try {
+      await tf.ready();
+      mobileNet = await mobilenet.load({ version: 2, alpha: 0.5 });
+      try {
+        examples = JSON.parse(localStorage.getItem(STORAGE_KEY)) || examples;
+      } catch {}
+      updateCounts();
+
+      try {
+        classifier = await tf.loadLayersModel("localstorage://person-image-classifier");
+      } catch {}
+
+      status("Ready. Add examples to both trainer boxes, then train.");
+    } catch (err) {
+      status("Could not load the model. Check your internet connection and refresh.");
+      console.error(err);
+    }
+  }
+
+  async function getFeatures(file) {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.src = url;
+    await new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = reject;
+    });
+
+    const output = tf.tidy(() => {
+      const pixels = tf.browser.fromPixels(image);
+      const resized = tf.image.resizeBilinear(pixels, [224, 224]);
+      return mobileNet.infer(resized, true).flatten();
+    });
+    const values = Array.from(await output.data());
+    output.dispose();
+    URL.revokeObjectURL(url);
+    return values;
+  }
+
+  async function addImages(files, group, previewId) {
+    if (!mobileNet) return status("Please wait for the model to finish loading.");
+    const chosen = [...files].filter(f => f.type.startsWith("image/"));
+    const allowance = MAX_IMAGES - examples[group].length;
+    if (allowance <= 0) return status("This trainer already has 100 images.");
+
+    for (const file of chosen.slice(0, allowance)) {
+      try {
+        status(`Learning image ${examples[group].length + 1}…`);
+        const features = await getFeatures(file);
+        examples[group].push(features);
+        $(previewId).src = URL.createObjectURL(file);
+      } catch (err) {
+        console.warn("Skipped image:", err);
+      }
+    }
+
+    updateCounts();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(examples));
+    status("Examples saved in this browser. Train or update the model.");
+  }
+
+  $("personFiles").onchange = e => addImages(e.target.files, "person", "personPreview");
+  $("otherFiles").onchange = e => addImages(e.target.files, "other", "otherPreview");
+
+  $("train").onclick = async () => {
+    if (examples.person.length < 2 || examples.other.length < 2) {
+      return status("Add at least 2 images to each trainer before training.");
+    }
+
+    $("train").disabled = true;
+    status("Training classifier…");
+    try {
+      if (classifier) classifier.dispose();
+
+      const rows = [...examples.person, ...examples.other];
+      const labels = [
+        ...examples.person.map(() => [1, 0]),
+        ...examples.other.map(() => [0, 1])
+      ];
+      const xs = tf.tensor2d(rows);
+      const ys = tf.tensor2d(labels);
+
+      classifier = tf.sequential({ layers: [
+        tf.layers.dense({ inputShape: [rows[0].length], units: 32, activation: "relu" }),
+        tf.layers.dropout({ rate: 0.2 }),
+        tf.layers.dense({ units: 2, activation: "softmax" })
+      ] });
+      classifier.compile({ optimizer: tf.train.adam(0.003), loss: "categoricalCrossentropy" });
+
+      await classifier.fit(xs, ys, {
+        epochs: 35,
+        batchSize: Math.min(16, rows.length),
+        shuffle: true,
+        verbose: 0
+      });
+      xs.dispose(); ys.dispose();
+      await classifier.save("localstorage://person-image-classifier");
+      status("Training complete. Choose an image in SCAN.");
+    } catch (err) {
+      console.error(err);
+      status("Training failed. Try fewer images or refresh the page.");
+    } finally {
+      $("train").disabled = false;
+    }
+  };
+
+  $("scanFile").onchange = e => {
+    const file = e.target.files[0];
+    if (file) $("scanPreview").src = URL.createObjectURL(file);
+    $("prediction").textContent = "Ready to scan";
+    $("confidence").textContent = "—%";
+  };
+
+  $("scan").onclick = async () => {
+    const file = $("scanFile").files[0];
+    if (!file) return status("Choose an image to scan.");
+    if (!classifier) return status("Add training images and train the model first.");
+
+    $("scan").disabled = true;
+    status("Comparing image features…");
+    try {
+      const features = await getFeatures(file);
+      const input = tf.tensor2d([features]);
+      const output = classifier.predict(input);
+      const scores = await output.data();
+      input.dispose(); output.dispose();
+
+      const person = scores[0] >= scores[1];
+      lastPrediction = { label: person ? "Person" : "Not Person" };
+      $("prediction").textContent = lastPrediction.label;
+      $("confidence").textContent = `${(Math.max(...scores) * 100).toFixed(1)}%`;
+      $("correct").disabled = false;
+      $("incorrect").disabled = false;
+      $("feedbackNote").textContent = "Confidence is the model's score, not a guarantee of correctness.";
+      status("Scan complete. Tell the trainer whether it was correct.");
+    } catch (err) {
+      console.error(err);
+      status("Could not scan this image.");
+    } finally {
+      $("scan").disabled = false;
+    }
+  };
+
+  async function recordFeedback(wasCorrect) {
+    if (!lastPrediction) return;
+    $("feedbackNote").textContent = wasCorrect
+      ? "Marked correct. Thanks for the feedback."
+      : "Marked incorrect. Add this image to the correct trainer box, then train again.";
+    if (!wasCorrect) {
+      status("To teach it from this mistake, add the scanned image to the correct trainer box and retrain.");
+    }
+    $("correct").disabled = true;
+    $("incorrect").disabled = true;
+  }
+  $("correct").onclick = () => recordFeedback(true);
+  $("incorrect").onclick = () => recordFeedback(false);
+
+  $("clear").onclick = async () => {
+    if (!confirm("Delete saved examples and the trained model from this browser?")) return;
+    examples = { person: [], other: [] };
+    localStorage.removeItem(STORAGE_KEY);
+    try { await tf.io.removeModel("localstorage://person-image-classifier"); } catch {}
+    if (classifier) classifier.dispose();
+    classifier = null;
+    updateCounts();
+    $("personPreview").removeAttribute("src");
+    $("otherPreview").removeAttribute("src");
+    status("Saved training data cleared.");
+  };
+
+  load();
+</script>
+</body>
+</html>
