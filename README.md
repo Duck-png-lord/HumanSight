@@ -1,4 +1,4 @@
-#HumanSight
+HumanSight
 HumanSight helps identify images that contain people, making it easier to review and organize image datasets for AI training.
 
 Overview
