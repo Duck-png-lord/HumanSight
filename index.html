@@ -2,477 +2,89 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Person Image Trainer</title>
-
-  <!-- Browser-only ML; no API key -->
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Image Trainer</title>
+  <link rel="stylesheet" href="/styles.css">
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1"></script>
-
-  <style>
-    :root {
-      color-scheme: light;
-      --blue: #2878ff;
-      --ink: #17243b;
-      --muted: #718097;
-      --panel: #fff;
-      --line: #e5ebf4;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0; min-height: 100vh; padding: 34px 18px;
-      background: linear-gradient(145deg,#eef5ff,#f8faff 48%,#edf8ff);
-      color: var(--ink); font: 15px/1.5 system-ui, sans-serif;
-    }
-    header { text-align: center; max-width: 680px; margin: 0 auto 26px; }
-    h1 { margin: 0; font-size: clamp(27px,5vw,40px); letter-spacing: -.04em; }
-    header p { margin: 8px 0 0; color: var(--muted); }
-    #status {
-      min-height: 24px; margin-top: 12px; color: #47617f;
-      font-size: 14px;
-    }
-    main {
-      display: grid; grid-template-columns: repeat(3,minmax(0,1fr));
-      gap: 18px; max-width: 1120px; margin: auto;
-    }
-    .card {
-      min-width: 0; padding: 22px; background: var(--panel);
-      border: 1px solid #e8edf5; border-radius: 22px;
-      box-shadow: 0 16px 45px #1e3b6410;
-    }
-    .title-row { display:flex; align-items:center; gap:11px; margin-bottom:16px; }
-    .icon {
-      display:grid; place-items:center; width:39px; height:39px;
-      border-radius:13px; background:#eaf2ff; font-size:20px;
-    }
-    h2 { margin:0; font-size:19px; line-height:1.2; }
-    .sub { margin:3px 0 0; color:var(--muted); font-size:12px; }
-    .preview {
-      display:block; width:100%; height:165px; object-fit:cover;
-      margin-bottom:13px; border-radius:15px; background:#edf2f8;
-    }
-    .pick {
-      display:block; padding:11px 13px; border:1px dashed #b8c9df;
-      border-radius:12px; background:#f7faff; color:#315c96;
-      text-align:center; font-weight:650; cursor:pointer;
-    }
-    .pick:hover { border-color:var(--blue); background:#f0f6ff; }
-    .pick input { display:none; }
-    button {
-      border:0; border-radius:12px; padding:11px 14px; cursor:pointer;
-      background:var(--blue); color:white; font:inherit; font-weight:700;
-      transition:transform .15s, opacity .15s;
-    }
-    button:hover:not(:disabled) { transform:translateY(-1px); }
-    button:disabled { opacity:.5; cursor:not-allowed; }
-    .wide { width:100%; margin-top:11px; }
-    .soft { background:#eef3fa; color:#395578; }
-    .count { margin:11px 0 0; color:var(--muted); font-size:13px; }
-    .scan-result {
-      min-height:106px; display:grid; place-content:center; text-align:center;
-      margin-top:14px; padding:12px; border-radius:15px; background:#f4f8ff;
-    }
-    #prediction { font-size:22px; font-weight:800; }
-    #confidence { color:var(--blue); font-weight:800; font-size:27px; }
-    .progress-wrap { display:none; margin:12px 0 2px; }
-    .progress-wrap.show { display:block; }
-    .scan-image {
-      width:55px; height:48px; object-fit:cover; display:none;
-      margin:0 auto 8px; border-radius:9px; box-shadow:0 4px 14px #203b601c;
-    }
-    .scan-image.show { display:block; }
-    .track {
-      height:9px; overflow:hidden; border-radius:99px;
-      background:#e6edf7; position:relative;
-    }
-    .bar {
-      position:absolute; inset:0 auto 0 0; width:0;
-      border-radius:inherit; background:linear-gradient(90deg,#2878ff,#60b2ff);
-      transition:width .25s ease;
-    }
-    .bar.indeterminate {
-      width:34%; animation:sweep 1.1s ease-in-out infinite alternate;
-    }
-    @keyframes sweep { from { transform:translateX(0); } to { transform:translateX(195%); } }
-    #progressText { margin-top:6px; text-align:center; color:var(--muted); font-size:12px; }
-    .feedback { display:flex; gap:9px; margin-top:11px; }
-    .feedback button { flex:1; }
-    .note { min-height:34px; margin:9px 0 0; color:var(--muted); font-size:12px; }
-    .privacy {
-      max-width:1120px; margin:18px auto 0; color:var(--muted);
-      text-align:center; font-size:12px;
-    }
-    @media(max-width:800px) { main { grid-template-columns:1fr; max-width:450px; } }
-  </style>
 </head>
 <body>
-<header>
-  <h1>Person Image Trainer</h1>
-  <p>Add examples, train your local classifier, then scan an image.</p>
-  <div id="status">Loading image model…</div>
-</header>
+  <header class="header">
+    <div class="eyebrow">LOCAL IMAGE CLASSIFIER</div>
+    <h1>Teach it what to look for.</h1>
+    <p>Upload labeled examples, train the classifier, then scan a new image.</p>
+    <div id="status" class="status">Starting up…</div>
+  </header>
 
-<main>
-  <section class="card">
-    <div class="title-row">
-      <div class="icon">🧍</div>
-      <div><h2>TRAINER · Person</h2><div class="sub">Examples that contain people</div></div>
-    </div>
-    <img id="personPreview" class="preview" alt="Person example preview">
-    <label class="pick">＋ Choose person images
-      <input id="personFiles" type="file" accept="image/*" multiple>
-    </label>
-    <p id="personCount" class="count">0 / 100 images saved</p>
-    <button id="train" class="wide">Train / update model</button>
-  </section>
+  <main class="layout">
+    <section class="card">
+      <div class="card-title">
+        <span class="icon person-icon">P</span>
+        <div><h2>TRAINER Person</h2><p>Images that contain a person</p></div>
+      </div>
+      <label class="dropzone" id="personDrop">
+        <span class="drop-icon">＋</span>
+        <strong>Choose or drop person images</strong>
+        <small>PNG, JPG, WEBP · up to 10 MB each</small>
+        <input id="personInput" type="file" accept="image/*" multiple>
+      </label>
+      <div class="section-line"><span>Saved examples</span><b id="personCount">0</b></div>
+      <div id="personGrid" class="image-grid"></div>
+      <button id="trainButton" class="button primary full">Train / update model</button>
+    </section>
 
-  <section class="card">
-    <div class="title-row">
-      <div class="icon">🖼️</div>
-      <div><h2>TRAINER · Not Person</h2><div class="sub">Examples without people</div></div>
-    </div>
-    <img id="otherPreview" class="preview" alt="Not-person example preview">
-    <label class="pick">＋ Choose not-person images
-      <input id="otherFiles" type="file" accept="image/*" multiple>
-    </label>
-    <p id="otherCount" class="count">0 / 100 images saved</p>
-    <button id="clear" class="wide soft">Clear saved data</button>
-  </section>
+    <section class="card">
+      <div class="card-title">
+        <span class="icon other-icon">N</span>
+        <div><h2>TRAINER Not Person</h2><p>Images that do not contain a person</p></div>
+      </div>
+      <label class="dropzone" id="otherDrop">
+        <span class="drop-icon">＋</span>
+        <strong>Choose or drop not-person images</strong>
+        <small>PNG, JPG, WEBP · up to 10 MB each</small>
+        <input id="otherInput" type="file" accept="image/*" multiple>
+      </label>
+      <div class="section-line"><span>Saved examples</span><b id="otherCount">0</b></div>
+      <div id="otherGrid" class="image-grid"></div>
+      <button id="clearButton" class="button quiet full">Clear all saved images</button>
+    </section>
 
-  <section class="card">
-    <div class="title-row">
-      <div class="icon">🔎</div>
-      <div><h2>SCAN</h2><div class="sub">Check a new image</div></div>
-    </div>
-    <img id="scanPreview" class="preview" alt="Image selected to scan">
-    <label class="pick">＋ Choose image to scan
-      <input id="scanFile" type="file" accept="image/*">
-    </label>
-    <button id="scan" class="wide">Scan image</button>
+    <section class="card scan-card">
+      <div class="card-title">
+        <span class="icon scan-icon">⌕</span>
+        <div><h2>SCAN</h2><p>Compare a new image with your examples</p></div>
+      </div>
+      <label class="scan-pick">
+        <span>Choose image to scan</span>
+        <input id="scanInput" type="file" accept="image/*">
+      </label>
+      <div class="scan-stage">
+        <img id="scanPreview" alt="Selected scan image">
+        <div id="scanPlaceholder">Your scan image will appear here</div>
+      </div>
 
-    <div id="progressWrap" class="progress-wrap" aria-live="polite">
-      <img id="progressImage" class="scan-image" alt="">
-      <div class="track"><div id="bar" class="bar"></div></div>
-      <div id="progressText">Preparing scan…</div>
-    </div>
+      <div id="progressArea" class="progress-area" hidden>
+        <div class="progress-track"><div id="progressBar"></div></div>
+        <div id="progressText">Preparing scan…</div>
+      </div>
 
-    <div class="scan-result">
-      <div id="prediction">No scan yet</div>
-      <div id="confidence">—%</div>
-    </div>
-    <p class="count">Was the prediction correct?</p>
-    <div class="feedback">
-      <button id="correct" disabled>Correct</button>
-      <button id="incorrect" class="soft" disabled>Incorrect</button>
-    </div>
-    <p id="feedbackNote" class="note"></p>
-  </section>
-</main>
+      <button id="scanButton" class="button primary full">Scan image</button>
 
-<p class="privacy">Your example images and model are saved in this browser only. They are not added to GitHub source files.</p>
+      <div class="result">
+        <div id="prediction">Ready when you are</div>
+        <div id="confidence" class="confidence"></div>
+      </div>
 
-<script>
-  const DB_NAME = "person-trainer-db";
-  const DB_VERSION = 1;
-  const MAX_PER_CLASS = 100;
-  const EMBEDDING_SIZE = 1024;
+      <div class="feedback-title">Was that prediction correct?</div>
+      <div class="feedback-buttons">
+        <button id="correctButton" class="button good" disabled>Yes, correct</button>
+        <button id="incorrectButton" class="button quiet" disabled>No, incorrect</button>
+      </div>
+      <p id="feedbackNote" class="feedback-note"></p>
+    </section>
+  </main>
 
-  let db, net, classifier, queuedFiles = [];
-  const examples = { person: [], other: [] };
-  const $ = id => document.getElementById(id);
-
-  function setStatus(text) { $("status").textContent = text; }
-
-  function openDatabase() {
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
-      request.onupgradeneeded = () => {
-        const d = request.result;
-        if (!d.objectStoreNames.contains("images")) {
-          d.createObjectStore("images", { keyPath: "id", autoIncrement: true });
-        }
-      };
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  function saveRecord(record) {
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction("images", "readwrite");
-      tx.objectStore("images").add(record);
-      tx.oncomplete = resolve;
-      tx.onerror = () => reject(tx.error);
-    });
-  }
-
-  function getAllRecords() {
-    return new Promise((resolve, reject) => {
-      const request = db.transaction("images").objectStore("images").getAll();
-      request.onsuccess = () => resolve(request.result || []);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  function deleteAllRecords() {
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction("images", "readwrite");
-      tx.objectStore("images").clear();
-      tx.oncomplete = resolve;
-      tx.onerror = () => reject(tx.error);
-    });
-  }
-
-  function previewFile(file, id) {
-    const old = $(id).dataset.url;
-    if (old) URL.revokeObjectURL(old);
-    const url = URL.createObjectURL(file);
-    $(id).src = url;
-    $(id).dataset.url = url;
-  }
-
-  function updateCounts() {
-    $("personCount").textContent = `${examples.person.length} / ${MAX_PER_CLASS} images saved`;
-    $("otherCount").textContent = `${examples.other.length} / ${MAX_PER_CLASS} images saved`;
-  }
-
-  function showProgress(text, percent = null) {
-    $("progressWrap").classList.add("show");
-    $("progressText").textContent = text;
-    const bar = $("bar");
-    if (percent === null) {
-      bar.classList.add("indeterminate");
-      bar.style.width = "";
-    } else {
-      bar.classList.remove("indeterminate");
-      bar.style.width = `${percent}%`;
-    }
-  }
-
-  async function imageFeatures(file) {
-    const url = URL.createObjectURL(file);
-    const image = new Image();
-    image.src = url;
-    try {
-      await new Promise((resolve, reject) => {
-        image.onload = resolve;
-        image.onerror = () => reject(new Error("This image could not be opened."));
-      });
-
-      // MobileNet's 0.5-width model gives a compact 1024-value image feature vector.
-      const tensor = tf.tidy(() => {
-        const pixels = tf.browser.fromPixels(image);
-        const resized = tf.image.resizeBilinear(pixels, [160, 160]);
-        return net.infer(resized, true).reshape([EMBEDDING_SIZE]);
-      });
-      const values = Array.from(await tensor.data());
-      tensor.dispose();
-      return values;
-    } finally {
-      URL.revokeObjectURL(url);
-    }
-  }
-
-  async function addFiles(fileList, label, previewId) {
-    if (!net || !db) {
-      queuedFiles.push({ files: [...fileList], label, previewId });
-      setStatus("Still loading the image model; your selected images are queued.");
-      return;
-    }
-
-    const files = [...fileList].filter(f => f.type.startsWith("image/"));
-    const remaining = MAX_PER_CLASS - examples[label].length;
-    if (!files.length) return setStatus("Choose a valid image file.");
-    if (remaining <= 0) return setStatus(`The ${label} trainer already has 100 images.`);
-
-    const chosen = files.slice(0, remaining);
-    for (let i = 0; i < chosen.length; i++) {
-      setStatus(`Processing ${label} image ${i + 1} of ${chosen.length}…`);
-      await new Promise(requestAnimationFrame);
-      try {
-        const vector = await imageFeatures(chosen[i]);
-        examples[label].push(vector);
-        await saveRecord({ label, vector });
-        previewFile(chosen[i], previewId);
-        updateCounts();
-      } catch (error) {
-        console.error(error);
-        setStatus(`Could not read ${chosen[i].name}: ${error.message}`);
-      }
-    }
-    setStatus("Images saved in this browser. Train or update the model.");
-  }
-
-  $("personFiles").addEventListener("change", e => {
-    addFiles(e.target.files, "person", "personPreview");
-    e.target.value = "";
-  });
-  $("otherFiles").addEventListener("change", e => {
-    addFiles(e.target.files, "other", "otherPreview");
-    e.target.value = "";
-  });
-
-  $("train").onclick = async () => {
-    if (examples.person.length < 2 || examples.other.length < 2) {
-      return setStatus("Add at least 2 images to each trainer before training.");
-    }
-
-    $("train").disabled = true;
-    setStatus("Training classifier…");
-    await new Promise(requestAnimationFrame);
-
-    let xs, ys;
-    try {
-      if (classifier) classifier.dispose();
-      const items = [
-        ...examples.person.map(vector => ({ vector, label: 0 })),
-        ...examples.other.map(vector => ({ vector, label: 1 }))
-      ];
-      tf.util.shuffle(items);
-      xs = tf.tensor2d(items.map(item => item.vector));
-      ys = tf.tensor2d(items.map(item => item.label === 0 ? [1, 0] : [0, 1]));
-
-      classifier = tf.sequential({ layers: [
-        tf.layers.dense({ inputShape: [EMBEDDING_SIZE], units: 32, activation: "relu" }),
-        tf.layers.dropout({ rate: 0.15 }),
-        tf.layers.dense({ units: 2, activation: "softmax" })
-      ] });
-      classifier.compile({ optimizer: tf.train.adam(0.003), loss: "categoricalCrossentropy" });
-      await classifier.fit(xs, ys, { epochs: 24, batchSize: Math.min(16, items.length), shuffle: true, verbose: 0 });
-      await classifier.save("localstorage://person-trainer-model");
-      setStatus("Training complete. Pick an image in SCAN.");
-    } catch (error) {
-      console.error(error);
-      setStatus(`Training failed: ${error.message || error}`);
-    } finally {
-      if (xs) xs.dispose();
-      if (ys) ys.dispose();
-      $("train").disabled = false;
-    }
-  };
-
-  $("scanFile").addEventListener("change", e => {
-    const file = e.target.files[0];
-    if (!file) return;
-    previewFile(file, "scanPreview");
-    previewFile(file, "progressImage");
-    $("prediction").textContent = "Ready to scan";
-    $("confidence").textContent = "—%";
-    $("feedbackNote").textContent = "";
-    $("correct").disabled = true;
-    $("incorrect").disabled = true;
-  });
-
-  $("scan").onclick = async () => {
-    const file = $("scanFile").files[0];
-    if (!file) return setStatus("Choose an image to scan first.");
-    if (!net) return setStatus("The image model is still loading.");
-    if (!classifier) return setStatus("Add examples to both trainers, then train the model.");
-
-    $("scan").disabled = true;
-    $("prediction").textContent = "Scanning…";
-    $("confidence").textContent = "";
-    $("bar").classList.remove("indeterminate");
-    showProgress("Reading image…", 8);
-
-    try {
-      await new Promise(requestAnimationFrame);
-      showProgress("Comparing image features…", 25);
-      const vector = await imageFeatures(file);
-      showProgress("Calculating prediction…", 78);
-      await new Promise(requestAnimationFrame);
-
-      const input = tf.tensor2d([vector]);
-      const output = classifier.predict(input);
-      const scores = await output.data();
-      input.dispose();
-      output.dispose();
-
-      const isPerson = scores[0] >= scores[1];
-      const confidence = Math.max(scores[0], scores[1]) * 100;
-      $("prediction").textContent = isPerson ? "Person" : "Not Person";
-      $("confidence").textContent = `${confidence.toFixed(1)}%`;
-      $("correct").disabled = false;
-      $("incorrect").disabled = false;
-      showProgress("Scan complete", 100);
-      setStatus("Scan complete.");
-    } catch (error) {
-      console.error(error);
-      $("prediction").textContent = "Scan failed";
-      $("confidence").textContent = "";
-      showProgress("Error: " + (error.message || error), 100);
-      setStatus("Scan failed. Check the browser console for details.");
-    } finally {
-      $("scan").disabled = false;
-    }
-  };
-
-  $("correct").onclick = () => {
-    $("feedbackNote").textContent = "Marked correct. Thanks for checking.";
-    $("correct").disabled = true;
-    $("incorrect").disabled = true;
-  };
-
-  $("incorrect").onclick = () => {
-    $("feedbackNote").textContent =
-      "Marked incorrect. To teach the model, add this image to the correct trainer box and train again.";
-    $("correct").disabled = true;
-    $("incorrect").disabled = true;
-  };
-
-  $("clear").onclick = async () => {
-    if (!confirm("Delete saved examples and the trained model from this browser?")) return;
-    try {
-      await deleteAllRecords();
-      examples.person = [];
-      examples.other = [];
-      if (classifier) classifier.dispose();
-      classifier = null;
-      try { await tf.io.removeModel("localstorage://person-trainer-model"); } catch {}
-      ["personPreview", "otherPreview"].forEach(id => {
-        const url = $(id).dataset.url;
-        if (url) URL.revokeObjectURL(url);
-        $(id).removeAttribute("src");
-        delete $(id).dataset.url;
-      });
-      updateCounts();
-      setStatus("Saved training images and model cleared.");
-    } catch (error) {
-      setStatus("Could not clear saved data: " + error.message);
-    }
-  };
-
-  async function start() {
-    try {
-      setStatus("Opening local image storage…");
-      db = await openDatabase();
-
-      const records = await getAllRecords();
-      for (const record of records) {
-        if (record.label === "person" && examples.person.length < MAX_PER_CLASS) examples.person.push(record.vector);
-        if (record.label === "other" && examples.other.length < MAX_PER_CLASS) examples.other.push(record.vector);
-      }
-      updateCounts();
-
-      setStatus("Loading compact image model…");
-      await tf.ready();
-      // Smaller model variant downloads less data and runs faster than the full model.
-      net = await mobilenet.load({ version: 2, alpha: 0.5 });
-
-      try {
-        classifier = await tf.loadLayersModel("localstorage://person-trainer-model");
-      } catch {}
-
-      setStatus(`Ready. Loaded ${examples.person.length + examples.other.length} saved training images.`);
-      const waiting = queuedFiles.splice(0);
-      for (const item of waiting) await addFiles(item.files, item.label, item.previewId);
-    } catch (error) {
-      console.error(error);
-      setStatus("Could not start. Check internet access, then refresh. " + (error.message || ""));
-    }
-  }
-
-  start();
-</script>
+  <footer>Uploaded images are saved in this Codespace under <code>data/</code>.</footer>
+  <script src="/app.js"></script>
 </body>
 </html>
