@@ -253,12 +253,12 @@ body[data-theme="cats"] {
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 14px;
-  background:
+  background-color: #f7f8fb;
+  background-image:
     linear-gradient(45deg, #eceef4 25%, transparent 25%),
     linear-gradient(-45deg, #eceef4 25%, transparent 25%),
     linear-gradient(45deg, transparent 75%, #eceef4 75%),
     linear-gradient(-45deg, transparent 75%, #eceef4 75%);
-  background-color: #f7f8fb;
   background-size: 20px 20px;
   background-position: 0 0, 0 10px, 10px -10px, -10px 0;
 }
@@ -289,6 +289,7 @@ body[data-theme="dark"] .scan-stage {
   position: absolute;
   inset: 0;
   z-index: 2;
+  display: block;
   width: 100%;
   height: 100%;
   pointer-events: none;
@@ -329,8 +330,13 @@ body[data-theme="dark"] .scan-stage {
 }
 
 @keyframes progress-move {
-  from { transform: translateX(0); }
-  to { transform: translateX(180%); }
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(180%);
+  }
 }
 
 .button {
@@ -423,7 +429,7 @@ footer {
 
 @media (max-width: 650px) {
   .header {
-    padding-top: 65px;
+    padding: 65px 16px 25px;
   }
 
   .theme-picker {
