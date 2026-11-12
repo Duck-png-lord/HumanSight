@@ -1,22 +1,14 @@
-// MobileNet v2 alpha 0.5 returns 1280 features.
-const EMBEDDING_SIZE = 1280;
-
-let net = null;
-let classifier = null;
+let detector = null;
 let scanFile = null;
 let predictionLabel = null;
-let trainingPromise = null;
+let detections = [];
 
 const $ = id => document.getElementById(id);
 
 async function request(url, options = {}) {
   const response = await fetch(url, options);
   const body = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(body.error || `Request failed (${response.status})`);
-  }
-
+  if (!response.ok) throw new Error(body.error || `Request failed (${response.status})`);
   return body;
 }
 
@@ -45,108 +37,13 @@ async function loadSavedImages() {
   return images;
 }
 
-async function readImageFeatures(blob) {
-  const url = URL.createObjectURL(blob);
-  const image = new Image();
-  image.src = url;
-
+/* The uploads remain saved as training examples. Person boxes come from
+   the object detector rather than assigning every image a person score. */
+async function refreshCounts() {
   try {
-    await new Promise((resolve, reject) => {
-      image.onload = resolve;
-      image.onerror = () => reject(new Error("Could not open this image."));
-    });
-
-    const tensor = tf.tidy(() => {
-      const pixels = tf.browser.fromPixels(image);
-      const resized = tf.image.resizeBilinear(pixels, [160, 160]);
-      return net.infer(resized, true).reshape([EMBEDDING_SIZE]);
-    });
-
-    const values = Array.from(await tensor.data());
-    tensor.dispose();
-    return values;
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
-
-async function trainFromSavedImages() {
-  if (trainingPromise) return trainingPromise;
-
-  trainingPromise = (async () => {
-    if (!net) throw new Error("The image model is still loading.");
-
-    const images = await request("/api/images");
-
-    if (images.person.length < 2 || images.notPerson.length < 2) {
-      classifier?.dispose();
-      classifier = null;
-      setStatus("Add at least 2 images to each trainer box. Training will start automatically.");
-      return false;
-    }
-
-    const examples = [
-      ...images.person.map(image => ({ ...image, label: 0 })),
-      ...images.notPerson.map(image => ({ ...image, label: 1 }))
-    ];
-
-    const samples = [];
-
-    for (let i = 0; i < examples.length; i++) {
-      setStatus(`Preparing saved images: ${i + 1}/${examples.length}`);
-
-      const response = await fetch(examples[i].url);
-      if (!response.ok) throw new Error(`Could not load ${examples[i].name}`);
-
-      const vector = await readImageFeatures(await response.blob());
-      samples.push({ vector, label: examples[i].label });
-    }
-
-    tf.util.shuffle(samples);
-
-    const xs = tf.tensor2d(samples.map(sample => sample.vector));
-    const ys = tf.tensor2d(samples.map(sample =>
-      sample.label === 0 ? [1, 0] : [0, 1]
-    ));
-
-    classifier?.dispose();
-    classifier = tf.sequential({
-      layers: [
-        tf.layers.dense({
-          inputShape: [EMBEDDING_SIZE],
-          units: 32,
-          activation: "relu"
-        }),
-        tf.layers.dropout({ rate: 0.15 }),
-        tf.layers.dense({ units: 2, activation: "softmax" })
-      ]
-    });
-
-    classifier.compile({
-      optimizer: tf.train.adam(0.003),
-      loss: "categoricalCrossentropy"
-    });
-
-    setStatus("Training automatically from saved images…");
-
-    await classifier.fit(xs, ys, {
-      epochs: 20,
-      batchSize: Math.min(16, samples.length),
-      shuffle: true,
-      verbose: 0
-    });
-
-    xs.dispose();
-    ys.dispose();
-
-    setStatus(`Ready. Automatically trained with ${samples.length} images.`);
-    return true;
-  })();
-
-  try {
-    return await trainingPromise;
-  } finally {
-    trainingPromise = null;
+    await loadSavedImages();
+  } catch (error) {
+    setStatus(`Could not load saved-image counts: ${error.message}`);
   }
 }
 
@@ -162,18 +59,9 @@ async function uploadTrainingFiles(files, label) {
 
   try {
     setStatus(`Uploading ${images.length} image(s)…`);
-
-    await request(`/api/upload/${label}`, {
-      method: "POST",
-      body: form
-    });
-
-    classifier?.dispose();
-    classifier = null;
-
-    await loadSavedImages();
-    setStatus("Images saved. Retraining automatically…");
-    await trainFromSavedImages();
+    await request(`/api/upload/${label}`, { method: "POST", body: form });
+    await refreshCounts();
+    setStatus("Images saved. They’ll be available to the app on this Codespace.");
   } catch (error) {
     setStatus(`Upload failed: ${error.message}`);
   }
@@ -204,30 +92,74 @@ function setupUploader(inputId, dropId, label) {
   });
 }
 
-$("trainButton").addEventListener("click", async () => {
-  $("trainButton").disabled = true;
+function drawPersonBoxes() {
+  const image = $("scanPreview");
+  const canvas = $("boxCanvas");
+  const stage = $("scanStage");
+  const rect = image.getBoundingClientRect();
+  const stageRect = stage.getBoundingClientRect();
 
-  try {
-    await trainFromSavedImages();
-  } catch (error) {
-    console.error(error);
-    setStatus(`Training failed: ${error.message}`);
-  } finally {
-    $("trainButton").disabled = false;
+  if (!image.naturalWidth || !image.naturalHeight || !rect.width || !rect.height) {
+    return;
   }
-});
+
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(stage.clientWidth * dpr);
+  canvas.height = Math.round(stage.clientHeight * dpr);
+  canvas.style.width = `${stage.clientWidth}px`;
+  canvas.style.height = `${stage.clientHeight}px`;
+
+  const context = canvas.getContext("2d");
+  context.setTransform(dpr, 0, 0, dpr, 0, 0);
+  context.clearRect(0, 0, stage.clientWidth, stage.clientHeight);
+
+  // The image uses object-fit: contain. Offset boxes to match its displayed area.
+  const imageLeft = rect.left - stageRect.left;
+  const imageTop = rect.top - stageRect.top;
+  const scaleX = rect.width / image.naturalWidth;
+  const scaleY = rect.height / image.naturalHeight;
+
+  for (const detection of detections) {
+    if (detection.class !== "person") continue;
+
+    const [x, y, width, height] = detection.bbox;
+    const boxX = imageLeft + x * scaleX;
+    const boxY = imageTop + y * scaleY;
+    const boxWidth = width * scaleX;
+    const boxHeight = height * scaleY;
+
+    context.lineWidth = 3;
+    context.strokeStyle = "#19d38b";
+    context.fillStyle = "#19d38b";
+    context.strokeRect(boxX, boxY, boxWidth, boxHeight);
+
+    const label = `Person ${(detection.score * 100).toFixed(0)}%`;
+    context.font = "bold 13px system-ui, sans-serif";
+    const labelWidth = context.measureText(label).width + 12;
+    const labelY = Math.max(0, boxY - 24);
+
+    context.fillRect(boxX, labelY, labelWidth, 23);
+    context.fillStyle = "#10251d";
+    context.fillText(label, boxX + 6, labelY + 16);
+  }
+}
 
 $("scanInput").addEventListener("change", event => {
   scanFile = event.target.files[0] || null;
+  detections = [];
+  predictionLabel = null;
+
+  const canvas = $("boxCanvas");
+  const context = canvas.getContext("2d");
+  context.clearRect(0, 0, canvas.width, canvas.height);
+
   if (!scanFile) return;
 
   const preview = $("scanPreview");
-
-  if (preview.dataset.url) {
-    URL.revokeObjectURL(preview.dataset.url);
-  }
+  if (preview.dataset.url) URL.revokeObjectURL(preview.dataset.url);
 
   preview.dataset.url = URL.createObjectURL(scanFile);
+  preview.onload = () => drawPersonBoxes();
   preview.src = preview.dataset.url;
   preview.classList.add("visible");
   $("scanPlaceholder").hidden = true;
@@ -245,42 +177,42 @@ $("scanButton").addEventListener("click", async () => {
     return;
   }
 
+  if (!detector) {
+    setStatus("The detector is still loading. Try again in a moment.");
+    return;
+  }
+
   $("scanButton").disabled = true;
+  $("prediction").textContent = "Scanning…";
+  $("confidence").textContent = "";
+  $("correctButton").disabled = true;
+  $("incorrectButton").disabled = true;
 
   try {
-    if (!classifier) {
-      setStatus("Training automatically from saved images…");
-      await trainFromSavedImages();
+    setProgress("Looking for people…", null);
+
+    const image = $("scanPreview");
+    detections = await detector.detect(image, 20, 0.35);
+    const people = detections.filter(item => item.class === "person");
+
+    drawPersonBoxes();
+
+    if (people.length) {
+      predictionLabel = "person";
+      $("prediction").textContent =
+        `${people.length} ${people.length === 1 ? "person" : "people"} detected`;
+      $("confidence").textContent =
+        `Highest detection confidence: ${(Math.max(...people.map(item => item.score)) * 100).toFixed(0)}%`;
+    } else {
+      predictionLabel = "not-person";
+      $("prediction").textContent = "No person detected";
+      $("confidence").textContent = "";
     }
-
-    if (!classifier) return;
-
-    $("prediction").textContent = "Scanning…";
-    $("confidence").textContent = "";
-    setProgress("Reading image…", 10);
-
-    const vector = await readImageFeatures(scanFile);
-    setProgress("Comparing image features…", 70);
-
-    const input = tf.tensor2d([vector]);
-    const output = classifier.predict(input);
-    const scores = Array.from(await output.data());
-
-    input.dispose();
-    output.dispose();
-
-    const isPerson = scores[0] >= scores[1];
-    predictionLabel = isPerson ? "person" : "not-person";
-
-    $("prediction").textContent = isPerson ? "Person" : "Not Person";
-    $("confidence").textContent =
-      `${(Math.max(...scores) * 100).toFixed(1)}%`;
 
     $("correctButton").disabled = false;
     $("incorrectButton").disabled = false;
-
     setProgress("Scan complete", 100);
-    setStatus("Scan complete. Choose Yes or No to add feedback to training.");
+    setStatus("Scan complete. Green boxes mark detected people.");
   } catch (error) {
     console.error(error);
     $("prediction").textContent = "Scan failed";
@@ -319,18 +251,12 @@ async function saveFeedback(wasCorrect) {
     });
 
     $("feedbackNote").textContent = wasCorrect
-      ? "Marked yes. Image saved to its training folder."
-      : `Marked no. Image saved to the ${correctLabel === "person" ? "Person" : "Not Person"} training folder.`;
+      ? "Yes — image saved to its training folder."
+      : `No — image saved to the ${correctLabel === "person" ? "Person" : "Not Person"} training folder.`;
 
     $("correctButton").disabled = true;
     $("incorrectButton").disabled = true;
-
-    classifier?.dispose();
-    classifier = null;
-
-    await loadSavedImages();
-    setStatus("Feedback saved. Retraining automatically…");
-    await trainFromSavedImages();
+    await refreshCounts();
   } catch (error) {
     setStatus(`Could not save feedback: ${error.message}`);
   }
@@ -338,6 +264,10 @@ async function saveFeedback(wasCorrect) {
 
 $("correctButton").addEventListener("click", () => saveFeedback(true));
 $("incorrectButton").addEventListener("click", () => saveFeedback(false));
+
+$("trainButton").addEventListener("click", () => {
+  setStatus("Person detection uses the object-detection model and does not need training.");
+});
 
 $("clearButton").addEventListener("click", async () => {
   if (!confirm("Delete all saved training images?")) return;
@@ -350,16 +280,13 @@ $("clearButton").addEventListener("click", async () => {
       ["not-person", images.notPerson]
     ]) {
       for (const image of list) {
-        await request(
-          `/api/images/${label}/${encodeURIComponent(image.name)}`,
-          { method: "DELETE" }
-        );
+        await request(`/api/images/${label}/${encodeURIComponent(image.name)}`, {
+          method: "DELETE"
+        });
       }
     }
 
-    classifier?.dispose();
-    classifier = null;
-    await loadSavedImages();
+    await refreshCounts();
     setStatus("Saved training images deleted.");
   } catch (error) {
     setStatus(`Could not clear images: ${error.message}`);
@@ -377,23 +304,20 @@ if (["light", "dark", "pastel", "cats"].includes(savedTheme)) {
   $("themeSelect").value = savedTheme;
 }
 
+window.addEventListener("resize", drawPersonBoxes);
+
 setupUploader("personInput", "personDrop", "person");
 setupUploader("otherInput", "otherDrop", "not-person");
 
 async function start() {
   try {
-    setStatus("Connecting to saved training files…");
-    await loadSavedImages();
-
-    setStatus("Loading image model…");
-    await tf.ready();
-    net = await mobilenet.load({ version: 2, alpha: 0.5 });
-
-    setStatus("Training automatically from saved images…");
-    await trainFromSavedImages();
+    await refreshCounts();
+    setStatus("Loading person detector…");
+    detector = await cocoSsd.load();
+    setStatus("Ready. Choose an image to scan.");
   } catch (error) {
     console.error(error);
-    setStatus(`Could not start: ${error.message}`);
+    setStatus(`Could not start detector: ${error.message}`);
   }
 }
 
