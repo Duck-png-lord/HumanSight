@@ -85,6 +85,35 @@ function setupUploader(inputId, dropId, label) {
   });
 }
 
+/*
+ * The image is displayed with object-fit: contain. This calculates the
+ * exact displayed image rectangle, then maps detector coordinates into it.
+ */
+function getDisplayedImageRect() {
+  const image = $("scanPreview");
+  const stage = $("scanStage");
+
+  if (!image.naturalWidth || !image.naturalHeight) return null;
+
+  const stageWidth = stage.clientWidth;
+  const stageHeight = stage.clientHeight;
+  const scale = Math.min(
+    stageWidth / image.naturalWidth,
+    stageHeight / image.naturalHeight
+  );
+
+  const width = image.naturalWidth * scale;
+  const height = image.naturalHeight * scale;
+
+  return {
+    x: (stageWidth - width) / 2,
+    y: (stageHeight - height) / 2,
+    width,
+    height,
+    scale
+  };
+}
+
 function drawPersonBoxes() {
   const image = $("scanPreview");
   const canvas = $("boxCanvas");
@@ -105,25 +134,19 @@ function drawPersonBoxes() {
   context.setTransform(dpr, 0, 0, dpr, 0, 0);
   context.clearRect(0, 0, stageWidth, stageHeight);
 
-  // Scale the whole image to fit. Nothing is cropped.
-  const scale = Math.min(
-    stageWidth / image.naturalWidth,
-    stageHeight / image.naturalHeight
-  );
-
-  const displayedWidth = image.naturalWidth * scale;
-  const displayedHeight = image.naturalHeight * scale;
-  const offsetX = (stageWidth - displayedWidth) / 2;
-  const offsetY = (stageHeight - displayedHeight) / 2;
+  const displayed = getDisplayedImageRect();
+  if (!displayed) return;
 
   for (const detection of detections) {
     if (detection.class !== "person") continue;
 
     const [x, y, width, height] = detection.bbox;
-    const boxX = offsetX + x * scale;
-    const boxY = offsetY + y * scale;
-    const boxWidth = width * scale;
-    const boxHeight = height * scale;
+
+    // COCO-SSD bbox values are relative to the original image dimensions.
+    const boxX = displayed.x + x * displayed.scale;
+    const boxY = displayed.y + y * displayed.scale;
+    const boxWidth = width * displayed.scale;
+    const boxHeight = height * displayed.scale;
 
     context.lineWidth = 3;
     context.strokeStyle = "#19d38b";
@@ -133,23 +156,77 @@ function drawPersonBoxes() {
     context.font = "bold 13px system-ui, sans-serif";
 
     const labelWidth = context.measureText(label).width + 12;
-    const labelY = Math.max(0, boxY - 24);
+    const labelHeight = 23;
+    const labelY = Math.max(0, boxY - labelHeight);
 
     context.fillStyle = "#19d38b";
-    context.fillRect(boxX, labelY, labelWidth, 23);
+    context.fillRect(boxX, labelY, labelWidth, labelHeight);
 
     context.fillStyle = "#10251d";
     context.fillText(label, boxX + 6, labelY + 16);
   }
 }
 
-$("scanInput").addEventListener("change", event => {
-  scanFile = event.target.files[0] || null;
+function clearBoxes() {
   detections = [];
-  predictionLabel = null;
 
   const canvas = $("boxCanvas");
-  canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
+  const context = canvas.getContext("2d");
+  context.clearRect(0, 0, canvas.width, canvas.height);
+}
+
+/*
+ * Run the detector three times. Combine the results and remove overlapping
+ * duplicate boxes so repeated detections do not draw three boxes per person.
+ */
+async function detectThreeTimes(image) {
+  const passes = [];
+
+  for (let pass = 1; pass <= 3; pass++) {
+    setProgress(`Scan ${pass} of 3…`, Math.round(((pass - 1) / 3) * 100));
+    const results = await detector.detect(image, 20, 0.25);
+    passes.push(...results.filter(item => item.class === "person"));
+  }
+
+  return mergeDuplicateDetections(passes);
+}
+
+function intersectionOverUnion(a, b) {
+  const [ax, ay, aw, ah] = a.bbox;
+  const [bx, by, bw, bh] = b.bbox;
+
+  const left = Math.max(ax, bx);
+  const top = Math.max(ay, by);
+  const right = Math.min(ax + aw, bx + bw);
+  const bottom = Math.min(ay + ah, by + bh);
+
+  const intersection = Math.max(0, right - left) * Math.max(0, bottom - top);
+  const areaA = aw * ah;
+  const areaB = bw * bh;
+  const union = areaA + areaB - intersection;
+
+  return union > 0 ? intersection / union : 0;
+}
+
+function mergeDuplicateDetections(items) {
+  const sorted = [...items].sort((a, b) => b.score - a.score);
+  const kept = [];
+
+  for (const item of sorted) {
+    const duplicate = kept.some(
+      existing => intersectionOverUnion(existing, item) >= 0.5
+    );
+
+    if (!duplicate) kept.push(item);
+  }
+
+  return kept;
+}
+
+$("scanInput").addEventListener("change", event => {
+  scanFile = event.target.files[0] || null;
+  clearBoxes();
+  predictionLabel = null;
 
   $("prediction").textContent = "Ready to scan";
   $("confidence").textContent = "";
@@ -165,10 +242,7 @@ $("scanInput").addEventListener("change", event => {
     URL.revokeObjectURL(preview.dataset.url);
   }
 
-  preview.onload = () => {
-    drawPersonBoxes();
-  };
-
+  preview.onload = drawPersonBoxes;
   preview.dataset.url = URL.createObjectURL(scanFile);
   preview.src = preview.dataset.url;
   preview.classList.add("visible");
@@ -187,25 +261,22 @@ $("scanButton").addEventListener("click", async () => {
   }
 
   $("scanButton").disabled = true;
-  $("prediction").textContent = "Scanning…";
+  $("prediction").textContent = "Scanning three times…";
   $("confidence").textContent = "";
   $("correctButton").disabled = true;
   $("incorrectButton").disabled = true;
+  clearBoxes();
 
   try {
-    setProgress("Looking for people…");
-
-    detections = await detector.detect($("scanPreview"), 20, 0.35);
+    detections = await detectThreeTimes($("scanPreview"));
     drawPersonBoxes();
 
-    const people = detections.filter(item => item.class === "person");
-
-    if (people.length > 0) {
+    if (detections.length > 0) {
       predictionLabel = "person";
       $("prediction").textContent =
-        `${people.length} ${people.length === 1 ? "person" : "people"} detected`;
+        `${detections.length} ${detections.length === 1 ? "person" : "people"} detected`;
 
-      const highestScore = Math.max(...people.map(item => item.score));
+      const highestScore = Math.max(...detections.map(item => item.score));
       $("confidence").textContent =
         `Highest box confidence: ${(highestScore * 100).toFixed(0)}%`;
     } else {
@@ -217,7 +288,7 @@ $("scanButton").addEventListener("click", async () => {
     $("correctButton").disabled = false;
     $("incorrectButton").disabled = false;
 
-    setProgress("Scan complete", 100);
+    setProgress("Three scans complete", 100);
     setStatus("Scan complete. Green boxes mark detected people.");
   } catch (error) {
     console.error(error);
@@ -264,7 +335,6 @@ async function saveFeedback(wasCorrect) {
 
     $("correctButton").disabled = true;
     $("incorrectButton").disabled = true;
-
     setStatus("Feedback saved.");
   } catch (error) {
     setStatus(`Could not save feedback: ${error.message}`);
