@@ -6,7 +6,7 @@
   <title>Image Trainer</title>
   <link rel="stylesheet" href="/styles.css">
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3"></script>
 </head>
 <body data-theme="light">
   <header class="header">
@@ -32,14 +32,12 @@
         <span class="icon person-icon">P</span>
         <div><h2>TRAINER · Person</h2><p>Images containing a person</p></div>
       </div>
-
       <label class="dropzone" id="personDrop">
         <span class="drop-icon">＋</span>
         <strong>Choose or drop person images</strong>
         <small>PNG, JPG, WEBP · max 10 MB each</small>
         <input id="personInput" type="file" accept="image/*" multiple>
       </label>
-
       <div class="saved-count">Saved examples <b id="personCount">0</b></div>
       <button id="trainButton" class="button primary full">Train / update model</button>
     </section>
@@ -49,14 +47,12 @@
         <span class="icon other-icon">N</span>
         <div><h2>TRAINER · Not Person</h2><p>Images without a person</p></div>
       </div>
-
       <label class="dropzone" id="otherDrop">
         <span class="drop-icon">＋</span>
         <strong>Choose or drop not-person images</strong>
         <small>PNG, JPG, WEBP · max 10 MB each</small>
         <input id="otherInput" type="file" accept="image/*" multiple>
       </label>
-
       <div class="saved-count">Saved examples <b id="otherCount">0</b></div>
       <button id="clearButton" class="button quiet full">Clear saved images</button>
     </section>
@@ -64,7 +60,7 @@
     <section class="card">
       <div class="card-title">
         <span class="icon scan-icon">⌕</span>
-        <div><h2>SCAN</h2><p>Check an image against your examples</p></div>
+        <div><h2>SCAN</h2><p>Detect people and show their locations</p></div>
       </div>
 
       <label class="scan-pick">
@@ -72,8 +68,9 @@
         <input id="scanInput" type="file" accept="image/*">
       </label>
 
-      <div class="scan-stage">
+      <div class="scan-stage" id="scanStage">
         <img id="scanPreview" alt="Image selected for scanning">
+        <canvas id="boxCanvas" aria-label="Person detection boxes"></canvas>
         <div id="scanPlaceholder">Your scan image appears here</div>
       </div>
 
@@ -99,10 +96,6 @@
   </main>
 
   <footer>Made by Ducks_UK</footer>
-  <script src="/app.js"></script>
-</body>
-</html>
-  <footer>Uploaded images are saved in this Codespace under <code>data/</code>.</footer>
   <script src="/app.js"></script>
 </body>
 </html>
