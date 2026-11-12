@@ -76,7 +76,7 @@
           <span class="icon scan-icon">⌕</span>
           <div>
             <h2>PERSON SCAN</h2>
-            <p>Scans every other frame where possible; long clips are sampled less often.</p>
+            <p>Scans video frames within a 30-second best-effort limit.</p>
           </div>
         </div>
 
@@ -98,7 +98,16 @@
         <div class="scan-stage" id="scanStage">
           <img id="scanPreview" alt="Image or GIF selected for scanning">
           <video id="scanVideo" muted playsinline preload="metadata"></video>
-          <canvas id="boxCanvas" aria-label="Person and head detection boxes"></canvas>
+          <canvas id="boxCanvas" aria-label="Person and estimated head detection boxes"></canvas>
+
+          <button
+            id="mediaPlayButton"
+            class="media-play"
+            type="button"
+            aria-label="Play media"
+            hidden
+          >▶</button>
+
           <div id="scanPlaceholder">Your image, GIF, or video appears here</div>
         </div>
 
