@@ -9,6 +9,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gifuct-js@2.1.2/dist/gifuct-js.min.js"></script>
 </head>
 <body data-theme="light">
   <header class="header">
@@ -76,7 +77,7 @@
           <span class="icon scan-icon">⌕</span>
           <div>
             <h2>PERSON SCAN</h2>
-            <p>Scans video frames within a 30-second best-effort limit.</p>
+            <p>Scan an image, GIF, or video. Video scanning has a 30-second best-effort limit.</p>
           </div>
         </div>
 
@@ -96,8 +97,9 @@
         </label>
 
         <div class="scan-stage" id="scanStage">
-          <img id="scanPreview" alt="Image or GIF selected for scanning">
+          <img id="scanPreview" alt="Image selected for scanning">
           <video id="scanVideo" muted playsinline preload="metadata"></video>
+          <canvas id="gifCanvas" aria-label="GIF preview"></canvas>
           <canvas id="boxCanvas" aria-label="Person and estimated head detection boxes"></canvas>
 
           <button
@@ -109,6 +111,19 @@
           >▶</button>
 
           <div id="scanPlaceholder">Your image, GIF, or video appears here</div>
+        </div>
+
+        <div id="mediaControls" class="media-controls" hidden>
+          <span id="mediaCurrentTime">0:00</span>
+          <input
+            id="mediaTimeline"
+            type="range"
+            min="0"
+            max="1000"
+            value="0"
+            aria-label="Media timeline"
+          >
+          <span id="mediaDuration">0:00</span>
         </div>
 
         <div id="progressArea" class="progress-area" hidden>
@@ -165,7 +180,7 @@
     </section>
   </main>
 
-  <footer>Made by Ducks_UK</footer>
+  <footer>Made by Ducks_UK & Dennis :3</footer>
   <script src="/app.js"></script>
 </body>
 </html>
