@@ -3,7 +3,6 @@ const EMBEDDING_SIZE = 1280;
 
 let net = null;
 let classifier = null;
-let trainingExamples = { person: [], other: [] };
 let scanFile = null;
 let predictionLabel = null;
 let trainingPromise = null;
@@ -13,7 +12,11 @@ const $ = id => document.getElementById(id);
 async function request(url, options = {}) {
   const response = await fetch(url, options);
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error || `Request failed (${response.status})`);
+
+  if (!response.ok) {
+    throw new Error(body.error || `Request failed (${response.status})`);
+  }
+
   return body;
 }
 
@@ -35,14 +38,10 @@ function setProgress(message, percent = null) {
   }
 }
 
-function renderCounts(images) {
-  $("personCount").textContent = images.person.length;
-  $("otherCount").textContent = images.notPerson.length;
-}
-
 async function loadSavedImages() {
   const images = await request("/api/images");
-  renderCounts(images);
+  $("personCount").textContent = images.person.length;
+  $("otherCount").textContent = images.notPerson.length;
   return images;
 }
 
@@ -71,21 +70,109 @@ async function readImageFeatures(blob) {
   }
 }
 
+async function trainFromSavedImages() {
+  if (trainingPromise) return trainingPromise;
+
+  trainingPromise = (async () => {
+    if (!net) throw new Error("The image model is still loading.");
+
+    const images = await request("/api/images");
+
+    if (images.person.length < 2 || images.notPerson.length < 2) {
+      classifier?.dispose();
+      classifier = null;
+      setStatus("Add at least 2 images to each trainer box. Training will start automatically.");
+      return false;
+    }
+
+    const examples = [
+      ...images.person.map(image => ({ ...image, label: 0 })),
+      ...images.notPerson.map(image => ({ ...image, label: 1 }))
+    ];
+
+    const samples = [];
+
+    for (let i = 0; i < examples.length; i++) {
+      setStatus(`Preparing saved images: ${i + 1}/${examples.length}`);
+
+      const response = await fetch(examples[i].url);
+      if (!response.ok) throw new Error(`Could not load ${examples[i].name}`);
+
+      const vector = await readImageFeatures(await response.blob());
+      samples.push({ vector, label: examples[i].label });
+    }
+
+    tf.util.shuffle(samples);
+
+    const xs = tf.tensor2d(samples.map(sample => sample.vector));
+    const ys = tf.tensor2d(samples.map(sample =>
+      sample.label === 0 ? [1, 0] : [0, 1]
+    ));
+
+    classifier?.dispose();
+    classifier = tf.sequential({
+      layers: [
+        tf.layers.dense({
+          inputShape: [EMBEDDING_SIZE],
+          units: 32,
+          activation: "relu"
+        }),
+        tf.layers.dropout({ rate: 0.15 }),
+        tf.layers.dense({ units: 2, activation: "softmax" })
+      ]
+    });
+
+    classifier.compile({
+      optimizer: tf.train.adam(0.003),
+      loss: "categoricalCrossentropy"
+    });
+
+    setStatus("Training automatically from saved images…");
+
+    await classifier.fit(xs, ys, {
+      epochs: 20,
+      batchSize: Math.min(16, samples.length),
+      shuffle: true,
+      verbose: 0
+    });
+
+    xs.dispose();
+    ys.dispose();
+
+    setStatus(`Ready. Automatically trained with ${samples.length} images.`);
+    return true;
+  })();
+
+  try {
+    return await trainingPromise;
+  } finally {
+    trainingPromise = null;
+  }
+}
+
 async function uploadTrainingFiles(files, label) {
   const images = [...files].filter(file => file.type.startsWith("image/"));
-  if (!images.length) return setStatus("Choose image files.");
+  if (!images.length) {
+    setStatus("Choose image files.");
+    return;
+  }
 
   const form = new FormData();
   images.forEach(image => form.append("images", image));
 
   try {
     setStatus(`Uploading ${images.length} image(s)…`);
-    await request(`/api/upload/${label}`, { method: "POST", body: form });
+
+    await request(`/api/upload/${label}`, {
+      method: "POST",
+      body: form
+    });
+
     classifier?.dispose();
     classifier = null;
-    trainingExamples = { person: [], other: [] };
+
     await loadSavedImages();
-    setStatus("Images uploaded to the Codespace. Updating the model…");
+    setStatus("Images saved. Retraining automatically…");
     await trainFromSavedImages();
   } catch (error) {
     setStatus(`Upload failed: ${error.message}`);
@@ -117,86 +204,9 @@ function setupUploader(inputId, dropId, label) {
   });
 }
 
-async function trainFromSavedImages() {
-  if (trainingPromise) return trainingPromise;
-
-  trainingPromise = (async () => {
-    if (!net) throw new Error("The image model is still loading.");
-
-    const images = await request("/api/images");
-    if (images.person.length < 2 || images.notPerson.length < 2) {
-      trainingExamples = { person: [], other: [] };
-      classifier?.dispose();
-      classifier = null;
-      setStatus("Upload at least 2 images in each trainer box to train.");
-      return false;
-    }
-
-    const samples = [];
-    const all = [
-      ...images.person.map(image => ({ ...image, label: 0 })),
-      ...images.notPerson.map(image => ({ ...image, label: 1 }))
-    ];
-
-    for (let i = 0; i < all.length; i++) {
-      setStatus(`Preparing saved training images: ${i + 1}/${all.length}`);
-      const response = await fetch(all[i].url);
-      if (!response.ok) throw new Error(`Could not load ${all[i].name}`);
-      const vector = await readImageFeatures(await response.blob());
-      samples.push({ vector, label: all[i].label });
-    }
-
-    tf.util.shuffle(samples);
-    const xs = tf.tensor2d(samples.map(sample => sample.vector));
-    const ys = tf.tensor2d(samples.map(sample =>
-      sample.label === 0 ? [1, 0] : [0, 1]
-    ));
-
-    classifier?.dispose();
-    classifier = tf.sequential({ layers: [
-      tf.layers.dense({
-        inputShape: [EMBEDDING_SIZE],
-        units: 32,
-        activation: "relu"
-      }),
-      tf.layers.dropout({ rate: 0.15 }),
-      tf.layers.dense({ units: 2, activation: "softmax" })
-    ] });
-
-    classifier.compile({
-      optimizer: tf.train.adam(0.003),
-      loss: "categoricalCrossentropy"
-    });
-
-    setStatus("Training from saved images…");
-    await classifier.fit(xs, ys, {
-      epochs: 20,
-      batchSize: Math.min(16, samples.length),
-      shuffle: true,
-      verbose: 0
-    });
-
-    xs.dispose();
-    ys.dispose();
-
-    trainingExamples = {
-      person: images.person,
-      other: images.notPerson
-    };
-
-    setStatus(`Ready. Trained with ${all.length} saved images.`);
-    return true;
-  })();
-
-  try {
-    return await trainingPromise;
-  } finally {
-    trainingPromise = null;
-  }
-}
-
 $("trainButton").addEventListener("click", async () => {
   $("trainButton").disabled = true;
+
   try {
     await trainFromSavedImages();
   } catch (error) {
@@ -212,7 +222,10 @@ $("scanInput").addEventListener("change", event => {
   if (!scanFile) return;
 
   const preview = $("scanPreview");
-  if (preview.dataset.url) URL.revokeObjectURL(preview.dataset.url);
+
+  if (preview.dataset.url) {
+    URL.revokeObjectURL(preview.dataset.url);
+  }
 
   preview.dataset.url = URL.createObjectURL(scanFile);
   preview.src = preview.dataset.url;
@@ -227,26 +240,32 @@ $("scanInput").addEventListener("change", event => {
 });
 
 $("scanButton").addEventListener("click", async () => {
-  if (!scanFile) return setStatus("Choose an image to scan first.");
+  if (!scanFile) {
+    setStatus("Choose an image to scan first.");
+    return;
+  }
+
+  $("scanButton").disabled = true;
 
   try {
     if (!classifier) {
-      setStatus("Training from saved images…");
+      setStatus("Training automatically from saved images…");
       await trainFromSavedImages();
     }
+
     if (!classifier) return;
 
-    $("scanButton").disabled = true;
     $("prediction").textContent = "Scanning…";
     $("confidence").textContent = "";
     setProgress("Reading image…", 10);
 
     const vector = await readImageFeatures(scanFile);
-    setProgress("Comparing with training examples…", 70);
+    setProgress("Comparing image features…", 70);
 
     const input = tf.tensor2d([vector]);
     const output = classifier.predict(input);
     const scores = Array.from(await output.data());
+
     input.dispose();
     output.dispose();
 
@@ -254,12 +273,14 @@ $("scanButton").addEventListener("click", async () => {
     predictionLabel = isPerson ? "person" : "not-person";
 
     $("prediction").textContent = isPerson ? "Person" : "Not Person";
-    $("confidence").textContent = `${(Math.max(...scores) * 100).toFixed(1)}%`;
+    $("confidence").textContent =
+      `${(Math.max(...scores) * 100).toFixed(1)}%`;
+
     $("correctButton").disabled = false;
     $("incorrectButton").disabled = false;
 
     setProgress("Scan complete", 100);
-    setStatus("Scan complete. Choose Yes or No to save feedback.");
+    setStatus("Scan complete. Choose Yes or No to add feedback to training.");
   } catch (error) {
     console.error(error);
     $("prediction").textContent = "Scan failed";
@@ -298,17 +319,17 @@ async function saveFeedback(wasCorrect) {
     });
 
     $("feedbackNote").textContent = wasCorrect
-      ? "Yes — image saved to the matching training folder."
-      : `No — image saved to the ${correctLabel === "person" ? "Person" : "Not Person"} training folder.`;
+      ? "Marked yes. Image saved to its training folder."
+      : `Marked no. Image saved to the ${correctLabel === "person" ? "Person" : "Not Person"} training folder.`;
 
     $("correctButton").disabled = true;
     $("incorrectButton").disabled = true;
 
-    // Rebuild training data so the feedback image is included immediately.
     classifier?.dispose();
     classifier = null;
-    trainingExamples = { person: [], other: [] };
+
     await loadSavedImages();
+    setStatus("Feedback saved. Retraining automatically…");
     await trainFromSavedImages();
   } catch (error) {
     setStatus(`Could not save feedback: ${error.message}`);
@@ -319,26 +340,27 @@ $("correctButton").addEventListener("click", () => saveFeedback(true));
 $("incorrectButton").addEventListener("click", () => saveFeedback(false));
 
 $("clearButton").addEventListener("click", async () => {
-  if (!confirm("Delete all saved training images from the Codespace?")) return;
+  if (!confirm("Delete all saved training images?")) return;
 
   try {
     const images = await request("/api/images");
+
     for (const [label, list] of [
       ["person", images.person],
       ["not-person", images.notPerson]
     ]) {
       for (const image of list) {
-        await request(`/api/images/${label}/${encodeURIComponent(image.name)}`, {
-          method: "DELETE"
-        });
+        await request(
+          `/api/images/${label}/${encodeURIComponent(image.name)}`,
+          { method: "DELETE" }
+        );
       }
     }
 
     classifier?.dispose();
     classifier = null;
-    trainingExamples = { person: [], other: [] };
     await loadSavedImages();
-    setStatus("Training images deleted.");
+    setStatus("Saved training images deleted.");
   } catch (error) {
     setStatus(`Could not clear images: ${error.message}`);
   }
@@ -360,14 +382,14 @@ setupUploader("otherInput", "otherDrop", "not-person");
 
 async function start() {
   try {
-    setStatus("Connecting to your Codespace…");
+    setStatus("Connecting to saved training files…");
     await loadSavedImages();
 
     setStatus("Loading image model…");
     await tf.ready();
     net = await mobilenet.load({ version: 2, alpha: 0.5 });
 
-    setStatus("Loading saved examples and training automatically…");
+    setStatus("Training automatically from saved images…");
     await trainFromSavedImages();
   } catch (error) {
     console.error(error);
