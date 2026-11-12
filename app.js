@@ -6,7 +6,6 @@ let predictionLabel = null;
 let detections = [];
 let scanMode = "image";
 let scanUrl = null;
-let scanTimer = null;
 let scanBusy = false;
 
 const MAX_SCAN_MS = 30_000;
@@ -51,6 +50,18 @@ function isVideoFile(file) {
 
 function isGifFile(file) {
   return file.type === "image/gif" || /\.gif$/i.test(file.name);
+}
+
+function updateMediaButton() {
+  const button = $("mediaPlayButton");
+  const video = $("scanVideo");
+  const hasMedia = scanFile && (scanMode === "video" || isGifFile(scanFile));
+
+  button.hidden = !hasMedia;
+
+  const isPlaying = scanMode === "video" && !video.paused;
+  button.textContent = isPlaying ? "❚❚" : "▶";
+  button.setAttribute("aria-label", isPlaying ? "Pause media" : "Play media");
 }
 
 async function uploadTrainingFiles(files, label) {
@@ -125,6 +136,18 @@ function getDisplayedFrameRect() {
   };
 }
 
+function estimateHeadBox([x, y, width, height]) {
+  const headWidth = width * 0.48;
+  const headHeight = height * 0.22;
+
+  return [
+    x + (width - headWidth) / 2,
+    y + height * 0.025,
+    headWidth,
+    headHeight
+  ];
+}
+
 function drawBoxes() {
   const canvas = $("boxCanvas");
   const stage = $("scanStage");
@@ -141,8 +164,6 @@ function drawBoxes() {
 
   const displayed = getDisplayedFrameRect();
   if (!displayed) return;
-
-  const showHeads = $("headToggle").checked;
 
   for (const detection of detections) {
     const [x, y, width, height] = detection.bbox;
@@ -165,7 +186,7 @@ function drawBoxes() {
     context.fillStyle = "#10251d";
     context.fillText(label, px + 6, labelY + 16);
 
-    if (showHeads) {
+    if ($("headToggle").checked) {
       const head = estimateHeadBox(detection.bbox);
       const hx = displayed.x + head[0] * displayed.scale;
       const hy = displayed.y + head[1] * displayed.scale;
@@ -180,25 +201,9 @@ function drawBoxes() {
       context.fillRect(hx, Math.max(0, hy - 20), 48, 20);
       context.fillStyle = "#fff";
       context.font = "bold 12px system-ui, sans-serif";
-      context.fillText("Head", hx + 6, Math.max(14, hy - 6));
+      context.fillText("Head*", hx + 6, Math.max(14, hy - 6));
     }
   }
-}
-
-/*
- * COCO-SSD does not provide head detections. This makes an approximate
- * head-region box from the upper part of each person box.
- */
-function estimateHeadBox([x, y, width, height]) {
-  const headWidth = width * 0.48;
-  const headHeight = height * 0.22;
-
-  return [
-    x + (width - headWidth) / 2,
-    y + height * 0.025,
-    headWidth,
-    headHeight
-  ];
 }
 
 function clearBoxes() {
@@ -220,9 +225,10 @@ function iou(a, b) {
 }
 
 function filterDetections(results, width, height) {
+  if (!width || !height) return [];
+
   const frameArea = width * height;
 
-  // Reject near-full-frame boxes and tiny low-quality detections.
   const plausible = results.filter(item => {
     if (item.class !== "person" || item.score < 0.4) return false;
 
@@ -238,7 +244,9 @@ function filterDetections(results, width, height) {
   const kept = [];
 
   for (const item of sorted) {
-    if (!kept.some(existing => iou(existing, item) > 0.5)) kept.push(item);
+    if (!kept.some(existing => iou(existing, item) > 0.5)) {
+      kept.push(item);
+    }
   }
 
   return kept;
@@ -268,7 +276,7 @@ function waitForEvent(target, eventName) {
     };
 
     target.addEventListener(eventName, onSuccess, { once: true });
-    target.addEventListener("error", onError, { once: true });
+    target.addEventListener("error", onError);
   });
 }
 
@@ -318,6 +326,7 @@ function seekVideo(video, time) {
 
 function setScanPreview(file) {
   if (scanUrl) URL.revokeObjectURL(scanUrl);
+
   scanUrl = URL.createObjectURL(file);
   scanFile = file;
   predictionLabel = null;
@@ -327,6 +336,8 @@ function setScanPreview(file) {
   $("incorrectButton").disabled = true;
   $("feedbackNote").textContent = "Feedback saving is for still images only.";
   $("confidence").textContent = "";
+
+  updateMediaButton();
 }
 
 $("scanInput").addEventListener("change", async event => {
@@ -337,6 +348,7 @@ $("scanInput").addEventListener("change", async event => {
 
   const image = $("scanPreview");
   const video = $("scanVideo");
+
   image.classList.remove("visible");
   video.classList.remove("visible");
   $("scanPlaceholder").hidden = true;
@@ -346,21 +358,26 @@ $("scanInput").addEventListener("change", async event => {
       scanMode = "video";
       video.src = scanUrl;
       video.load();
+
       await waitForEvent(video, "loadedmetadata");
       await waitForVideoFrame(video);
+
       video.currentTime = 0;
       await waitForVideoFrame(video);
+
       video.classList.add("visible");
       drawBoxes();
     } else {
       scanMode = "image";
       image.src = scanUrl;
       await waitForEvent(image, "load");
+
       image.classList.add("visible");
 
       if (isGifFile(file)) {
-        setStatus("GIF selected. Its animation will be scanned.");
+        setStatus("GIF selected. Use the play button to open its animation.");
       }
+
       drawBoxes();
     }
 
@@ -371,45 +388,68 @@ $("scanInput").addEventListener("change", async event => {
     setStatus(`Could not load file: ${error.message}`);
   }
 
+  updateMediaButton();
   event.target.value = "";
 });
 
+$("mediaPlayButton").addEventListener("click", async () => {
+  if (!scanFile) return;
+
+  if (scanMode === "video") {
+    const video = $("scanVideo");
+
+    try {
+      if (video.paused) {
+        await video.play();
+      } else {
+        video.pause();
+      }
+    } catch (error) {
+      setStatus(`Could not play video: ${error.message}`);
+    }
+
+    updateMediaButton();
+  } else if (isGifFile(scanFile) && scanUrl) {
+    window.open(scanUrl, "_blank", "noopener");
+  }
+});
+
+$("scanVideo").addEventListener("play", updateMediaButton);
+$("scanVideo").addEventListener("pause", updateMediaButton);
+$("scanVideo").addEventListener("ended", updateMediaButton);
+
 async function scanStillImage() {
   const image = $("scanPreview");
-  const isAnimatedGif = isGifFile(scanFile);
-  const source = image;
 
-  if (!isAnimatedGif) {
-    const results = await detectFrame(source);
+  if (!isGifFile(scanFile)) {
+    const results = await detectFrame(image);
     detections = results;
     drawBoxes();
     return results;
   }
 
-  /*
-   * Animated GIFs are rendered by the browser as an animated image.
-   * Sample the current displayed frame repeatedly; the browser continues
-   * animating during the small delay between samples.
-   */
   const sampled = [];
   const started = performance.now();
   let count = 0;
 
   while (count < 12 && performance.now() - started < TARGET_SCAN_MS) {
-    sampled.push(...await detectFrame(source));
+    sampled.push(...await detectFrame(image));
     count++;
-    setProgress(`Scanning GIF frame ${count}…`, Math.min(95, count * 8));
+
+    setProgress(`Scanning GIF sample ${count}…`, Math.min(95, count * 8));
     await new Promise(resolve => setTimeout(resolve, 180));
   }
 
+  /*
+   * The <img> element exposes the currently displayed GIF frame to the
+   * browser, but doesn't provide exact frame timing. This merges detections
+   * sampled during animation.
+   */
   const { width, height } = frameDimensions();
-  detections = mergeFrameResults(sampled, width, height);
+  detections = filterDetections(sampled, width, height);
   drawBoxes();
-  return detections;
-}
 
-function mergeFrameResults(results, width, height) {
-  return filterDetections(results, width, height);
+  return detections;
 }
 
 async function scanVideo() {
@@ -422,12 +462,16 @@ async function scanVideo() {
 
   const started = performance.now();
   const estimatedCostPerFrame = 300;
-  const estimatedAvailable = Math.max(1, Math.floor(MAX_SCAN_MS / estimatedCostPerFrame));
+  const estimatedAvailable = Math.max(
+    1,
+    Math.floor(MAX_SCAN_MS / estimatedCostPerFrame)
+  );
   const frameCount = Math.min(MAX_VIDEO_FRAMES, estimatedAvailable);
   const frameStep = frameCount <= 2 ? duration : duration / (frameCount - 1);
-  const sampled = [];
 
   video.pause();
+
+  let lastResults = [];
 
   for (let index = 0; index < frameCount; index++) {
     if (performance.now() - started >= MAX_SCAN_MS) break;
@@ -435,9 +479,8 @@ async function scanVideo() {
     const time = Math.min(duration - 0.02, index * frameStep);
     await seekVideo(video, Math.max(0, time));
 
-    const found = await detectFrame(video);
-    sampled.push(...found);
-    detections = found;
+    lastResults = await detectFrame(video);
+    detections = lastResults;
     drawBoxes();
 
     const percent = Math.round(((index + 1) / frameCount) * 100);
@@ -446,17 +489,8 @@ async function scanVideo() {
     if (performance.now() - started >= MAX_SCAN_MS) break;
   }
 
-  if (sampled.length) {
-    /*
-     * Keep the detections from the most recently analyzed frame on screen.
-     * This avoids drawing unrelated boxes from different video positions
-     * over the same frame.
-     */
-    drawBoxes();
-  }
-
   video.currentTime = 0;
-  return detections;
+  return lastResults;
 }
 
 function finishPrediction(results) {
@@ -468,19 +502,15 @@ function finishPrediction(results) {
     const bestScore = Math.max(...results.map(item => item.score));
     $("confidence").textContent =
       `Highest box confidence: ${(bestScore * 100).toFixed(0)}%`;
-
-    if (scanMode === "image" && !isGifFile(scanFile)) {
-      $("correctButton").disabled = false;
-      $("incorrectButton").disabled = false;
-    }
   } else {
     predictionLabel = "not-person";
     $("prediction").textContent = "No person detected";
+    $("confidence").textContent = "";
+  }
 
-    if (scanMode === "image" && !isGifFile(scanFile)) {
-      $("correctButton").disabled = false;
-      $("incorrectButton").disabled = false;
-    }
+  if (scanMode === "image" && !isGifFile(scanFile)) {
+    $("correctButton").disabled = false;
+    $("incorrectButton").disabled = false;
   }
 }
 
@@ -505,11 +535,6 @@ $("scanButton").addEventListener("click", async () => {
   clearBoxes();
 
   const started = performance.now();
-  scanTimer = setTimeout(() => {
-    if (scanBusy) {
-      setStatus("Scan is taking longer than expected. Waiting for the current frame…");
-    }
-  }, MAX_SCAN_MS);
 
   try {
     setProgress("Preparing scan…", 0);
@@ -529,10 +554,9 @@ $("scanButton").addEventListener("click", async () => {
     setProgress(error.message, 100);
     setStatus(`Scan failed: ${error.message}`);
   } finally {
-    clearTimeout(scanTimer);
-    scanTimer = null;
     scanBusy = false;
     $("scanButton").disabled = false;
+    updateMediaButton();
   }
 });
 
@@ -641,6 +665,7 @@ $("searchButton").addEventListener("click", async () => {
         const similarity = tf.tidy(() => {
           const a = queryEmbedding.flatten();
           const b = databaseEmbedding.flatten();
+
           return tf.sum(tf.mul(a, b))
             .div(tf.norm(a).mul(tf.norm(b)))
             .dataSync()[0];
