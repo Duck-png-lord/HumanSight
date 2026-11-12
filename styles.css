@@ -360,7 +360,8 @@ body[data-theme="dark"] .scan-stage {
 }
 
 #scanPreview,
-#scanVideo {
+#scanVideo,
+#gifCanvas {
   display: none;
   position: absolute;
   inset: 0;
@@ -370,8 +371,13 @@ body[data-theme="dark"] .scan-stage {
 }
 
 #scanPreview.visible,
-#scanVideo.visible {
+#scanVideo.visible,
+#gifCanvas.visible {
   display: block;
+}
+
+#gifCanvas {
+  object-fit: contain;
 }
 
 #boxCanvas {
@@ -416,6 +422,26 @@ body[data-theme="dark"] .scan-stage {
 
 .media-play[hidden] {
   display: none;
+}
+
+.media-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.media-controls[hidden] {
+  display: none;
+}
+
+#mediaTimeline {
+  flex: 1;
+  min-width: 50px;
+  accent-color: var(--primary);
+  cursor: pointer;
 }
 
 .progress-area {
