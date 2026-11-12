@@ -8,7 +8,11 @@ const $ = id => document.getElementById(id);
 async function request(url, options = {}) {
   const response = await fetch(url, options);
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error || `Request failed (${response.status})`);
+
+  if (!response.ok) {
+    throw new Error(body.error || `Request failed (${response.status})`);
+  }
+
   return body;
 }
 
@@ -21,6 +25,7 @@ function setProgress(message, percent = null) {
   $("progressText").textContent = message;
 
   const bar = $("progressBar");
+
   if (percent === null) {
     bar.classList.add("busy");
     bar.style.width = "";
@@ -30,25 +35,9 @@ function setProgress(message, percent = null) {
   }
 }
 
-async function loadSavedImages() {
-  const images = await request("/api/images");
-  $("personCount").textContent = images.person.length;
-  $("otherCount").textContent = images.notPerson.length;
-  return images;
-}
-
-/* The uploads remain saved as training examples. Person boxes come from
-   the object detector rather than assigning every image a person score. */
-async function refreshCounts() {
-  try {
-    await loadSavedImages();
-  } catch (error) {
-    setStatus(`Could not load saved-image counts: ${error.message}`);
-  }
-}
-
 async function uploadTrainingFiles(files, label) {
   const images = [...files].filter(file => file.type.startsWith("image/"));
+
   if (!images.length) {
     setStatus("Choose image files.");
     return;
@@ -59,9 +48,13 @@ async function uploadTrainingFiles(files, label) {
 
   try {
     setStatus(`Uploading ${images.length} image(s)…`);
-    await request(`/api/upload/${label}`, { method: "POST", body: form });
-    await refreshCounts();
-    setStatus("Images saved. They’ll be available to the app on this Codespace.");
+
+    await request(`/api/upload/${label}`, {
+      method: "POST",
+      body: form
+    });
+
+    setStatus("Images saved in the training folder.");
   } catch (error) {
     setStatus(`Upload failed: ${error.message}`);
   }
@@ -96,49 +89,55 @@ function drawPersonBoxes() {
   const image = $("scanPreview");
   const canvas = $("boxCanvas");
   const stage = $("scanStage");
-  const rect = image.getBoundingClientRect();
-  const stageRect = stage.getBoundingClientRect();
 
-  if (!image.naturalWidth || !image.naturalHeight || !rect.width || !rect.height) {
-    return;
-  }
+  if (!image.naturalWidth || !image.naturalHeight) return;
 
+  const stageWidth = stage.clientWidth;
+  const stageHeight = stage.clientHeight;
   const dpr = window.devicePixelRatio || 1;
-  canvas.width = Math.round(stage.clientWidth * dpr);
-  canvas.height = Math.round(stage.clientHeight * dpr);
-  canvas.style.width = `${stage.clientWidth}px`;
-  canvas.style.height = `${stage.clientHeight}px`;
+
+  canvas.width = Math.round(stageWidth * dpr);
+  canvas.height = Math.round(stageHeight * dpr);
+  canvas.style.width = `${stageWidth}px`;
+  canvas.style.height = `${stageHeight}px`;
 
   const context = canvas.getContext("2d");
   context.setTransform(dpr, 0, 0, dpr, 0, 0);
-  context.clearRect(0, 0, stage.clientWidth, stage.clientHeight);
+  context.clearRect(0, 0, stageWidth, stageHeight);
 
-  // The image uses object-fit: contain. Offset boxes to match its displayed area.
-  const imageLeft = rect.left - stageRect.left;
-  const imageTop = rect.top - stageRect.top;
-  const scaleX = rect.width / image.naturalWidth;
-  const scaleY = rect.height / image.naturalHeight;
+  // Scale the whole image to fit. Nothing is cropped.
+  const scale = Math.min(
+    stageWidth / image.naturalWidth,
+    stageHeight / image.naturalHeight
+  );
+
+  const displayedWidth = image.naturalWidth * scale;
+  const displayedHeight = image.naturalHeight * scale;
+  const offsetX = (stageWidth - displayedWidth) / 2;
+  const offsetY = (stageHeight - displayedHeight) / 2;
 
   for (const detection of detections) {
     if (detection.class !== "person") continue;
 
     const [x, y, width, height] = detection.bbox;
-    const boxX = imageLeft + x * scaleX;
-    const boxY = imageTop + y * scaleY;
-    const boxWidth = width * scaleX;
-    const boxHeight = height * scaleY;
+    const boxX = offsetX + x * scale;
+    const boxY = offsetY + y * scale;
+    const boxWidth = width * scale;
+    const boxHeight = height * scale;
 
     context.lineWidth = 3;
     context.strokeStyle = "#19d38b";
-    context.fillStyle = "#19d38b";
     context.strokeRect(boxX, boxY, boxWidth, boxHeight);
 
     const label = `Person ${(detection.score * 100).toFixed(0)}%`;
     context.font = "bold 13px system-ui, sans-serif";
+
     const labelWidth = context.measureText(label).width + 12;
     const labelY = Math.max(0, boxY - 24);
 
+    context.fillStyle = "#19d38b";
     context.fillRect(boxX, labelY, labelWidth, 23);
+
     context.fillStyle = "#10251d";
     context.fillText(label, boxX + 6, labelY + 16);
   }
@@ -150,25 +149,30 @@ $("scanInput").addEventListener("change", event => {
   predictionLabel = null;
 
   const canvas = $("boxCanvas");
-  const context = canvas.getContext("2d");
-  context.clearRect(0, 0, canvas.width, canvas.height);
-
-  if (!scanFile) return;
-
-  const preview = $("scanPreview");
-  if (preview.dataset.url) URL.revokeObjectURL(preview.dataset.url);
-
-  preview.dataset.url = URL.createObjectURL(scanFile);
-  preview.onload = () => drawPersonBoxes();
-  preview.src = preview.dataset.url;
-  preview.classList.add("visible");
-  $("scanPlaceholder").hidden = true;
+  canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
 
   $("prediction").textContent = "Ready to scan";
   $("confidence").textContent = "";
   $("feedbackNote").textContent = "";
   $("correctButton").disabled = true;
   $("incorrectButton").disabled = true;
+
+  if (!scanFile) return;
+
+  const preview = $("scanPreview");
+
+  if (preview.dataset.url) {
+    URL.revokeObjectURL(preview.dataset.url);
+  }
+
+  preview.onload = () => {
+    drawPersonBoxes();
+  };
+
+  preview.dataset.url = URL.createObjectURL(scanFile);
+  preview.src = preview.dataset.url;
+  preview.classList.add("visible");
+  $("scanPlaceholder").hidden = true;
 });
 
 $("scanButton").addEventListener("click", async () => {
@@ -178,7 +182,7 @@ $("scanButton").addEventListener("click", async () => {
   }
 
   if (!detector) {
-    setStatus("The detector is still loading. Try again in a moment.");
+    setStatus("The detector is still loading. Try again shortly.");
     return;
   }
 
@@ -189,20 +193,21 @@ $("scanButton").addEventListener("click", async () => {
   $("incorrectButton").disabled = true;
 
   try {
-    setProgress("Looking for people…", null);
+    setProgress("Looking for people…");
 
-    const image = $("scanPreview");
-    detections = await detector.detect(image, 20, 0.35);
-    const people = detections.filter(item => item.class === "person");
-
+    detections = await detector.detect($("scanPreview"), 20, 0.35);
     drawPersonBoxes();
 
-    if (people.length) {
+    const people = detections.filter(item => item.class === "person");
+
+    if (people.length > 0) {
       predictionLabel = "person";
       $("prediction").textContent =
         `${people.length} ${people.length === 1 ? "person" : "people"} detected`;
+
+      const highestScore = Math.max(...people.map(item => item.score));
       $("confidence").textContent =
-        `Highest detection confidence: ${(Math.max(...people.map(item => item.score)) * 100).toFixed(0)}%`;
+        `Highest box confidence: ${(highestScore * 100).toFixed(0)}%`;
     } else {
       predictionLabel = "not-person";
       $("prediction").textContent = "No person detected";
@@ -211,6 +216,7 @@ $("scanButton").addEventListener("click", async () => {
 
     $("correctButton").disabled = false;
     $("incorrectButton").disabled = false;
+
     setProgress("Scan complete", 100);
     setStatus("Scan complete. Green boxes mark detected people.");
   } catch (error) {
@@ -251,12 +257,15 @@ async function saveFeedback(wasCorrect) {
     });
 
     $("feedbackNote").textContent = wasCorrect
-      ? "Yes — image saved to its training folder."
-      : `No — image saved to the ${correctLabel === "person" ? "Person" : "Not Person"} training folder.`;
+      ? "Marked yes. Image saved to its training folder."
+      : `Marked no. Image saved to the ${
+          correctLabel === "person" ? "Person" : "Not Person"
+        } training folder.`;
 
     $("correctButton").disabled = true;
     $("incorrectButton").disabled = true;
-    await refreshCounts();
+
+    setStatus("Feedback saved.");
   } catch (error) {
     setStatus(`Could not save feedback: ${error.message}`);
   }
@@ -265,40 +274,13 @@ async function saveFeedback(wasCorrect) {
 $("correctButton").addEventListener("click", () => saveFeedback(true));
 $("incorrectButton").addEventListener("click", () => saveFeedback(false));
 
-$("trainButton").addEventListener("click", () => {
-  setStatus("Person detection uses the object-detection model and does not need training.");
-});
-
-$("clearButton").addEventListener("click", async () => {
-  if (!confirm("Delete all saved training images?")) return;
-
-  try {
-    const images = await request("/api/images");
-
-    for (const [label, list] of [
-      ["person", images.person],
-      ["not-person", images.notPerson]
-    ]) {
-      for (const image of list) {
-        await request(`/api/images/${label}/${encodeURIComponent(image.name)}`, {
-          method: "DELETE"
-        });
-      }
-    }
-
-    await refreshCounts();
-    setStatus("Saved training images deleted.");
-  } catch (error) {
-    setStatus(`Could not clear images: ${error.message}`);
-  }
-});
-
 $("themeSelect").addEventListener("change", event => {
   document.body.dataset.theme = event.target.value;
   localStorage.setItem("trainer-theme", event.target.value);
 });
 
 const savedTheme = localStorage.getItem("trainer-theme");
+
 if (["light", "dark", "pastel", "cats"].includes(savedTheme)) {
   document.body.dataset.theme = savedTheme;
   $("themeSelect").value = savedTheme;
@@ -311,13 +293,12 @@ setupUploader("otherInput", "otherDrop", "not-person");
 
 async function start() {
   try {
-    await refreshCounts();
     setStatus("Loading person detector…");
     detector = await cocoSsd.load();
     setStatus("Ready. Choose an image to scan.");
   } catch (error) {
     console.error(error);
-    setStatus(`Could not start detector: ${error.message}`);
+    setStatus(`Could not load detector: ${error.message}`);
   }
 }
 
