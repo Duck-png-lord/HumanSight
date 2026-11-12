@@ -8,9 +8,20 @@ let scanMode = "image";
 let scanUrl = null;
 let scanBusy = false;
 
+let gifFrames = [];
+let gifFrameIndex = 0;
+let gifStartedAt = 0;
+let gifAnimationId = null;
+let gifTotalDuration = 0;
+
+let scanResultsByTime = [];
+let timelineDragging = false;
+
 const MAX_SCAN_MS = 30_000;
 const TARGET_SCAN_MS = 5_000;
 const MAX_VIDEO_FRAMES = 45;
+const MAX_GIF_FRAMES = 60;
+
 const $ = id => document.getElementById(id);
 
 async function request(url, options = {}) {
@@ -52,67 +63,102 @@ function isGifFile(file) {
   return file.type === "image/gif" || /\.gif$/i.test(file.name);
 }
 
-function updateMediaButton() {
+function formatTime(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) seconds = 0;
+
+  const minutes = Math.floor(seconds / 60);
+  const remaining = Math.floor(seconds % 60);
+
+  return `${minutes}:${String(remaining).padStart(2, "0")}`;
+}
+
+function mediaDuration() {
+  if (scanMode === "video") {
+    const duration = $("scanVideo").duration;
+    return Number.isFinite(duration) ? duration : 0;
+  }
+
+  if (scanMode === "gif") return gifTotalDuration / 1000;
+  return 0;
+}
+
+function currentMediaTime() {
+  if (scanMode === "video") return $("scanVideo").currentTime || 0;
+
+  if (scanMode === "gif" && gifFrames.length) {
+    let elapsed = 0;
+
+    for (let i = 0; i < gifFrameIndex; i++) {
+      elapsed += gifFrames[i].delay;
+    }
+
+    if (isGifPlaying()) {
+      elapsed += performance.now() - gifStartedAt;
+    }
+
+    return Math.min(elapsed / 1000, gifTotalDuration / 1000);
+  }
+
+  return 0;
+}
+
+function isGifPlaying() {
+  return gifAnimationId !== null;
+}
+
+function updateMediaControls() {
+  const controls = $("mediaControls");
+  const duration = mediaDuration();
+
+  const hasTimeline =
+    (scanMode === "video" && Number.isFinite($("scanVideo").duration)) ||
+    (scanMode === "gif" && gifFrames.length > 0);
+
+  controls.hidden = !hasTimeline;
+
+  if (!hasTimeline) return;
+
+  const time = Math.min(currentMediaTime(), duration);
+  $("mediaCurrentTime").textContent = formatTime(time);
+  $("mediaDuration").textContent = formatTime(duration);
+
+  if (!timelineDragging && duration > 0) {
+    $("mediaTimeline").value = String(Math.round((time / duration) * 1000));
+  }
+
+  updatePlayButton();
+}
+
+function updatePlayButton() {
   const button = $("mediaPlayButton");
-  const video = $("scanVideo");
-  const hasMedia = scanFile && (scanMode === "video" || isGifFile(scanFile));
+  const isMedia = scanMode === "video" ||
+    (scanMode === "gif" && gifFrames.length > 0);
 
-  button.hidden = !hasMedia;
+  button.hidden = !isMedia;
 
-  const isPlaying = scanMode === "video" && !video.paused;
-  button.textContent = isPlaying ? "❚❚" : "▶";
-  button.setAttribute("aria-label", isPlaying ? "Pause media" : "Play media");
-}
+  let playing = false;
 
-async function uploadTrainingFiles(files, label) {
-  const images = [...files].filter(file => file.type.startsWith("image/"));
-
-  if (!images.length) {
-    setStatus("Choose image files.");
-    return;
+  if (scanMode === "video") {
+    playing = !$("scanVideo").paused && !$("scanVideo").ended;
+  } else if (scanMode === "gif") {
+    playing = isGifPlaying();
   }
 
-  const form = new FormData();
-  images.forEach(image => form.append("images", image));
-
-  try {
-    setStatus(`Uploading ${images.length} image(s)…`);
-    await request(`/api/upload/${label}`, { method: "POST", body: form });
-    setStatus("Images saved in the training folder.");
-  } catch (error) {
-    setStatus(`Upload failed: ${error.message}`);
-  }
-}
-
-function setupUploader(inputId, dropId, label) {
-  const input = $(inputId);
-  const dropzone = $(dropId);
-
-  input.addEventListener("change", async event => {
-    await uploadTrainingFiles(event.target.files, label);
-    input.value = "";
-  });
-
-  dropzone.addEventListener("dragover", event => {
-    event.preventDefault();
-    dropzone.classList.add("dragover");
-  });
-
-  dropzone.addEventListener("dragleave", () => {
-    dropzone.classList.remove("dragover");
-  });
-
-  dropzone.addEventListener("drop", event => {
-    event.preventDefault();
-    dropzone.classList.remove("dragover");
-    uploadTrainingFiles(event.dataTransfer.files, label);
-  });
+  button.textContent = playing ? "❚❚" : "▶";
+  button.setAttribute("aria-label", playing ? "Pause media" : "Play media");
 }
 
 function frameDimensions() {
   if (scanMode === "video") {
     const video = $("scanVideo");
     return { width: video.videoWidth, height: video.videoHeight };
+  }
+
+  if (scanMode === "gif" && gifFrames.length) {
+    return {
+      width: gifFrames[0].canvas.width,
+      height: gifFrames[0].canvas.height
+    };
   }
 
   const image = $("scanPreview");
@@ -198,7 +244,7 @@ function drawBoxes() {
       context.strokeRect(hx, hy, hw, hh);
 
       context.fillStyle = "#a855f7";
-      context.fillRect(hx, Math.max(0, hy - 20), 48, 20);
+      context.fillRect(hx, Math.max(0, hy - 20), 54, 20);
       context.fillStyle = "#fff";
       context.font = "bold 12px system-ui, sans-serif";
       context.fillText("Head*", hx + 6, Math.max(14, hy - 6));
@@ -215,12 +261,14 @@ function clearBoxes() {
 function iou(a, b) {
   const [ax, ay, aw, ah] = a.bbox;
   const [bx, by, bw, bh] = b.bbox;
+
   const left = Math.max(ax, bx);
   const top = Math.max(ay, by);
   const right = Math.min(ax + aw, bx + bw);
   const bottom = Math.min(ay + ah, by + bh);
   const intersection = Math.max(0, right - left) * Math.max(0, bottom - top);
   const union = aw * ah + bw * bh - intersection;
+
   return union > 0 ? intersection / union : 0;
 }
 
@@ -234,10 +282,10 @@ function filterDetections(results, width, height) {
 
     const [, , boxWidth, boxHeight] = item.bbox;
     const areaRatio = (boxWidth * boxHeight) / frameArea;
-    const widthRatio = boxWidth / width;
-    const heightRatio = boxHeight / height;
 
-    return areaRatio < 0.72 && widthRatio < 0.92 && heightRatio < 0.97;
+    return areaRatio < 0.72 &&
+      boxWidth / width < 0.92 &&
+      boxHeight / height < 0.97;
   });
 
   const sorted = plausible.sort((a, b) => b.score - a.score);
@@ -276,11 +324,11 @@ function waitForEvent(target, eventName) {
     };
 
     target.addEventListener(eventName, onSuccess, { once: true });
-    target.addEventListener("error", onError);
+    target.addEventListener("error", onError, { once: true });
   });
 }
 
-function waitForVideoFrame(video, timeoutMs = 1500) {
+function waitForVideoFrame(video, timeoutMs = 2000) {
   if (video.readyState >= 2) return Promise.resolve();
 
   return Promise.race([
@@ -300,7 +348,7 @@ function seekVideo(video, time) {
     const timeout = setTimeout(() => {
       cleanup();
       reject(new Error("Timed out seeking video frame."));
-    }, 1500);
+    }, 2000);
 
     const onSeeked = () => {
       cleanup();
@@ -324,11 +372,171 @@ function seekVideo(video, time) {
   });
 }
 
+function stopGifPlayback() {
+  if (gifAnimationId !== null) {
+    cancelAnimationFrame(gifAnimationId);
+    gifAnimationId = null;
+  }
+}
+
+function drawGifFrame(index) {
+  if (!gifFrames.length) return;
+
+  gifFrameIndex = (index + gifFrames.length) % gifFrames.length;
+
+  const canvas = $("gifCanvas");
+  const frame = gifFrames[gifFrameIndex];
+
+  canvas.width = frame.canvas.width;
+  canvas.height = frame.canvas.height;
+
+  const context = canvas.getContext("2d");
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(frame.canvas, 0, 0);
+
+  const timestamp = gifFrames
+    .slice(0, gifFrameIndex)
+    .reduce((sum, item) => sum + item.delay, 0);
+
+  detections = findDetectionsNearTime(timestamp / 1000);
+  drawBoxes();
+  updateMediaControls();
+}
+
+function playGif() {
+  if (!gifFrames.length || gifAnimationId !== null) return;
+
+  gifStartedAt = performance.now();
+  let lastFrameSwitch = performance.now();
+
+  const animate = now => {
+    if (gifAnimationId === null) return;
+
+    const frame = gifFrames[gifFrameIndex];
+    const delay = Math.max(20, frame.delay);
+
+    if (now - lastFrameSwitch >= delay) {
+      lastFrameSwitch = now;
+
+      if (gifFrameIndex >= gifFrames.length - 1) {
+        drawGifFrame(0);
+      } else {
+        drawGifFrame(gifFrameIndex + 1);
+      }
+    }
+
+    updateMediaControls();
+    gifAnimationId = requestAnimationFrame(animate);
+  };
+
+  gifAnimationId = requestAnimationFrame(animate);
+  updatePlayButton();
+}
+
+function pauseGif() {
+  stopGifPlayback();
+  updateMediaControls();
+}
+
+async function decodeGif(file) {
+  if (!window.gifuct) {
+    throw new Error("GIF decoder did not load. Check your internet connection.");
+  }
+
+  const buffer = await file.arrayBuffer();
+  const parsed = window.gifuct.parseGIF(buffer);
+  const decompressed = window.gifuct.decompressFrames(parsed, true);
+
+  if (!decompressed.length) {
+    throw new Error("The GIF contains no readable frames.");
+  }
+
+  const frames = decompressed.slice(0, MAX_GIF_FRAMES);
+  const width = parsed.lsd.width;
+  const height = parsed.lsd.height;
+  const patchCanvas = document.createElement("canvas");
+  patchCanvas.width = width;
+  patchCanvas.height = height;
+
+  const patchContext = patchCanvas.getContext("2d");
+  const priorImage = document.createElement("canvas");
+  priorImage.width = width;
+  priorImage.height = height;
+
+  const priorContext = priorImage.getContext("2d");
+  const outputFrames = [];
+
+  for (const frame of frames) {
+    if (frame.disposalType === 3) {
+      priorContext.clearRect(0, 0, width, height);
+      priorContext.drawImage(patchCanvas, 0, 0);
+    }
+
+    const imageData = new ImageData(
+      new Uint8ClampedArray(frame.patch),
+      frame.dims.width,
+      frame.dims.height
+    );
+
+    patchContext.putImageData(imageData, frame.dims.left, frame.dims.top);
+
+    const renderedFrame = document.createElement("canvas");
+    renderedFrame.width = width;
+    renderedFrame.height = height;
+    renderedFrame.getContext("2d").drawImage(patchCanvas, 0, 0);
+
+    outputFrames.push({
+      canvas: renderedFrame,
+      delay: Math.max(20, (frame.delay || 10) * 10)
+    });
+
+    if (frame.disposalType === 2) {
+      patchContext.clearRect(
+        frame.dims.left,
+        frame.dims.top,
+        frame.dims.width,
+        frame.dims.height
+      );
+    } else if (frame.disposalType === 3) {
+      patchContext.clearRect(0, 0, width, height);
+      patchContext.drawImage(priorImage, 0, 0);
+    }
+  }
+
+  gifFrames = outputFrames;
+  gifTotalDuration = gifFrames.reduce((sum, frame) => sum + frame.delay, 0);
+  gifFrameIndex = 0;
+  drawGifFrame(0);
+}
+
+function findDetectionsNearTime(time) {
+  if (!scanResultsByTime.length) return [];
+
+  let nearest = scanResultsByTime[0];
+  let nearestDistance = Math.abs(nearest.time - time);
+
+  for (const item of scanResultsByTime) {
+    const distance = Math.abs(item.time - time);
+
+    if (distance < nearestDistance) {
+      nearest = item;
+      nearestDistance = distance;
+    }
+  }
+
+  return nearest ? nearest.detections : [];
+}
+
 function setScanPreview(file) {
   if (scanUrl) URL.revokeObjectURL(scanUrl);
 
-  scanUrl = URL.createObjectURL(file);
+  stopGifPlayback();
+  gifFrames = [];
+  gifFrameIndex = 0;
+  gifTotalDuration = 0;
+  scanResultsByTime = [];
   scanFile = file;
+  scanUrl = URL.createObjectURL(file);
   predictionLabel = null;
   clearBoxes();
 
@@ -336,8 +544,6 @@ function setScanPreview(file) {
   $("incorrectButton").disabled = true;
   $("feedbackNote").textContent = "Feedback saving is for still images only.";
   $("confidence").textContent = "";
-
-  updateMediaButton();
 }
 
 $("scanInput").addEventListener("change", async event => {
@@ -348,14 +554,17 @@ $("scanInput").addEventListener("change", async event => {
 
   const image = $("scanPreview");
   const video = $("scanVideo");
+  const gifCanvas = $("gifCanvas");
 
   image.classList.remove("visible");
   video.classList.remove("visible");
+  gifCanvas.classList.remove("visible");
   $("scanPlaceholder").hidden = true;
 
   try {
     if (isVideoFile(file)) {
       scanMode = "video";
+      video.pause();
       video.src = scanUrl;
       video.load();
 
@@ -366,138 +575,186 @@ $("scanInput").addEventListener("change", async event => {
       await waitForVideoFrame(video);
 
       video.classList.add("visible");
-      drawBoxes();
+      $("mediaControls").hidden = false;
+    } else if (isGifFile(file)) {
+      scanMode = "gif";
+      await decodeGif(file);
+      gifCanvas.classList.add("visible");
+      $("mediaControls").hidden = false;
+      setStatus("GIF loaded. Use the timeline to seek and the button to play/pause.");
     } else {
       scanMode = "image";
       image.src = scanUrl;
       await waitForEvent(image, "load");
-
       image.classList.add("visible");
-
-      if (isGifFile(file)) {
-        setStatus("GIF selected. Use the play button to open its animation.");
-      }
-
-      drawBoxes();
+      $("mediaControls").hidden = true;
     }
 
     $("prediction").textContent = "Ready to scan";
     setStatus("File ready. Start the scan when you’re ready.");
+    drawBoxes();
+    updateMediaControls();
   } catch (error) {
     $("scanPlaceholder").hidden = false;
+    $("mediaControls").hidden = true;
     setStatus(`Could not load file: ${error.message}`);
   }
 
-  updateMediaButton();
+  updatePlayButton();
   event.target.value = "";
 });
 
 $("mediaPlayButton").addEventListener("click", async () => {
-  if (!scanFile) return;
-
   if (scanMode === "video") {
     const video = $("scanVideo");
 
     try {
-      if (video.paused) {
-        await video.play();
-      } else {
-        video.pause();
-      }
+      if (video.paused) await video.play();
+      else video.pause();
     } catch (error) {
       setStatus(`Could not play video: ${error.message}`);
     }
-
-    updateMediaButton();
-  } else if (isGifFile(scanFile) && scanUrl) {
-    window.open(scanUrl, "_blank", "noopener");
+  } else if (scanMode === "gif") {
+    if (isGifPlaying()) pauseGif();
+    else playGif();
   }
 });
 
-$("scanVideo").addEventListener("play", updateMediaButton);
-$("scanVideo").addEventListener("pause", updateMediaButton);
-$("scanVideo").addEventListener("ended", updateMediaButton);
+$("scanVideo").addEventListener("play", updateMediaControls);
+$("scanVideo").addEventListener("pause", updateMediaControls);
+$("scanVideo").addEventListener("ended", updateMediaControls);
+$("scanVideo").addEventListener("timeupdate", () => {
+  updateMediaControls();
+
+  if (scanResultsByTime.length) {
+    detections = findDetectionsNearTime($("scanVideo").currentTime);
+    drawBoxes();
+  }
+});
+
+$("mediaTimeline").addEventListener("input", () => {
+  timelineDragging = true;
+
+  const duration = mediaDuration();
+  const time = (Number($("mediaTimeline").value) / 1000) * duration;
+
+  $("mediaCurrentTime").textContent = formatTime(time);
+
+  if (scanMode === "video") {
+    $("scanVideo").currentTime = time;
+  } else if (scanMode === "gif" && gifFrames.length) {
+    const targetMs = time * 1000;
+    let accumulated = 0;
+    let index = 0;
+
+    for (; index < gifFrames.length - 1; index++) {
+      if (accumulated + gifFrames[index].delay >= targetMs) break;
+      accumulated += gifFrames[index].delay;
+    }
+
+    drawGifFrame(index);
+  }
+});
+
+$("mediaTimeline").addEventListener("change", () => {
+  timelineDragging = false;
+  updateMediaControls();
+});
 
 async function scanStillImage() {
   const image = $("scanPreview");
+  const results = await detectFrame(image);
 
-  if (!isGifFile(scanFile)) {
-    const results = await detectFrame(image);
-    detections = results;
-    drawBoxes();
-    return results;
-  }
-
-  const sampled = [];
-  const started = performance.now();
-  let count = 0;
-
-  while (count < 12 && performance.now() - started < TARGET_SCAN_MS) {
-    sampled.push(...await detectFrame(image));
-    count++;
-
-    setProgress(`Scanning GIF sample ${count}…`, Math.min(95, count * 8));
-    await new Promise(resolve => setTimeout(resolve, 180));
-  }
-
-  /*
-   * The <img> element exposes the currently displayed GIF frame to the
-   * browser, but doesn't provide exact frame timing. This merges detections
-   * sampled during animation.
-   */
-  const { width, height } = frameDimensions();
-  detections = filterDetections(sampled, width, height);
+  detections = results;
   drawBoxes();
 
-  return detections;
+  return results;
+}
+
+async function scanGif() {
+  const sampled = [];
+  const started = performance.now();
+  const total = gifFrames.length;
+  const step = Math.max(1, Math.ceil(total / MAX_GIF_FRAMES));
+
+  pauseGif();
+
+  for (let index = 0; index < total; index += step) {
+    if (performance.now() - started >= TARGET_SCAN_MS) break;
+
+    drawGifFrame(index);
+    const found = await detectFrame($("gifCanvas"));
+    const time = gifFrames
+      .slice(0, index)
+      .reduce((sum, frame) => sum + frame.delay, 0) / 1000;
+
+    sampled.push({ time, detections: found });
+    detections = found;
+    drawBoxes();
+
+    const sampleNumber = sampled.length;
+    setProgress(`Scanning GIF frame ${index + 1} of ${total}…`,
+      Math.min(99, Math.round((index / Math.max(1, total - 1)) * 100)));
+
+    await new Promise(resolve => setTimeout(resolve, 0));
+  }
+
+  scanResultsByTime = sampled;
+  drawGifFrame(gifFrameIndex);
+
+  return sampled.flatMap(item => item.detections);
 }
 
 async function scanVideo() {
   const video = $("scanVideo");
   const duration = Number.isFinite(video.duration) ? video.duration : 0;
 
-  if (!duration) {
-    throw new Error("Video duration is unavailable.");
-  }
+  if (!duration) throw new Error("Video duration is unavailable.");
 
   const started = performance.now();
   const estimatedCostPerFrame = 300;
-  const estimatedAvailable = Math.max(
-    1,
-    Math.floor(MAX_SCAN_MS / estimatedCostPerFrame)
-  );
+  const estimatedAvailable = Math.max(1, Math.floor(MAX_SCAN_MS / estimatedCostPerFrame));
   const frameCount = Math.min(MAX_VIDEO_FRAMES, estimatedAvailable);
-  const frameStep = frameCount <= 2 ? duration : duration / (frameCount - 1);
+  const sampled = [];
 
   video.pause();
-
-  let lastResults = [];
 
   for (let index = 0; index < frameCount; index++) {
     if (performance.now() - started >= MAX_SCAN_MS) break;
 
-    const time = Math.min(duration - 0.02, index * frameStep);
-    await seekVideo(video, Math.max(0, time));
+    const time = frameCount <= 1
+      ? 0
+      : (index / (frameCount - 1)) * Math.max(0, duration - 0.03);
 
-    lastResults = await detectFrame(video);
-    detections = lastResults;
+    await seekVideo(video, time);
+
+    const found = await detectFrame(video);
+    sampled.push({ time, detections: found });
+    detections = found;
     drawBoxes();
 
-    const percent = Math.round(((index + 1) / frameCount) * 100);
-    setProgress(`Scanning video frame ${index + 1} of ${frameCount}…`, percent);
+    setProgress(
+      `Scanning video frame ${index + 1} of ${frameCount}…`,
+      Math.round(((index + 1) / frameCount) * 100)
+    );
 
     if (performance.now() - started >= MAX_SCAN_MS) break;
   }
 
+  scanResultsByTime = sampled;
   video.currentTime = 0;
-  return lastResults;
+  detections = findDetectionsNearTime(0);
+  drawBoxes();
+  updateMediaControls();
+
+  return sampled.flatMap(item => item.detections);
 }
 
 function finishPrediction(results) {
   if (results.length) {
     predictionLabel = "person";
     $("prediction").textContent =
-      `${results.length} ${results.length === 1 ? "person" : "people"} detected`;
+      `${results.length} person detection${results.length === 1 ? "" : "s"} found`;
 
     const bestScore = Math.max(...results.map(item => item.score));
     $("confidence").textContent =
@@ -532,6 +789,7 @@ $("scanButton").addEventListener("click", async () => {
   $("prediction").textContent = "Scanning…";
   $("confidence").textContent = "";
   predictionLabel = null;
+  scanResultsByTime = [];
   clearBoxes();
 
   const started = performance.now();
@@ -539,9 +797,15 @@ $("scanButton").addEventListener("click", async () => {
   try {
     setProgress("Preparing scan…", 0);
 
-    const results = scanMode === "video"
-      ? await scanVideo()
-      : await scanStillImage();
+    let results;
+
+    if (scanMode === "video") {
+      results = await scanVideo();
+    } else if (scanMode === "gif") {
+      results = await scanGif();
+    } else {
+      results = await scanStillImage();
+    }
 
     finishPrediction(results);
     setProgress("Scan complete.", 100);
@@ -556,7 +820,7 @@ $("scanButton").addEventListener("click", async () => {
   } finally {
     scanBusy = false;
     $("scanButton").disabled = false;
-    updateMediaButton();
+    updateMediaControls();
   }
 });
 
@@ -614,7 +878,10 @@ $("searchInput").addEventListener("change", event => {
   if (!searchFile) return;
 
   const preview = $("searchPreview");
-  if (preview.dataset.url) URL.revokeObjectURL(preview.dataset.url);
+
+  if (preview.dataset.url) {
+    URL.revokeObjectURL(preview.dataset.url);
+  }
 
   preview.dataset.url = URL.createObjectURL(searchFile);
   preview.src = preview.dataset.url;
@@ -765,6 +1032,51 @@ if (["light", "dark", "pastel", "cats"].includes(savedTheme)) {
 
 setupUploader("personInput", "personDrop", "person");
 setupUploader("otherInput", "otherDrop", "not-person");
+
+function setupUploader(inputId, dropId, label) {
+  const input = $(inputId);
+  const dropzone = $(dropId);
+
+  input.addEventListener("change", async event => {
+    await uploadTrainingFiles(event.target.files, label);
+    input.value = "";
+  });
+
+  dropzone.addEventListener("dragover", event => {
+    event.preventDefault();
+    dropzone.classList.add("dragover");
+  });
+
+  dropzone.addEventListener("dragleave", () => {
+    dropzone.classList.remove("dragover");
+  });
+
+  dropzone.addEventListener("drop", event => {
+    event.preventDefault();
+    dropzone.classList.remove("dragover");
+    uploadTrainingFiles(event.dataTransfer.files, label);
+  });
+}
+
+async function uploadTrainingFiles(files, label) {
+  const images = [...files].filter(file => file.type.startsWith("image/"));
+
+  if (!images.length) {
+    setStatus("Choose image files.");
+    return;
+  }
+
+  const form = new FormData();
+  images.forEach(image => form.append("images", image));
+
+  try {
+    setStatus(`Uploading ${images.length} image(s)…`);
+    await request(`/api/upload/${label}`, { method: "POST", body: form });
+    setStatus("Images saved in the training folder.");
+  } catch (error) {
+    setStatus(`Upload failed: ${error.message}`);
+  }
+}
 
 async function start() {
   try {
