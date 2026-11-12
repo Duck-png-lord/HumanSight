@@ -14,7 +14,7 @@
   <header class="header">
     <div class="eyebrow">IMAGE CLASSIFIER</div>
     <h1>Teach it what to look for.</h1>
-    <p>Upload examples, scan for people, or search for similar saved images.</p>
+    <p>Upload examples, scan people in images, GIFs, or videos, and search saved images.</p>
     <div id="status" class="status">Starting…</div>
 
     <label class="theme-picker">
@@ -48,7 +48,7 @@
           <label class="dropzone" id="personDrop">
             <span class="drop-icon">＋</span>
             <strong>Choose or drop person images</strong>
-            <small>PNG, JPG, WEBP · max 10 MB each</small>
+            <small>Image files · max 10 MB each</small>
             <input id="personInput" type="file" accept="image/*" multiple>
           </label>
         </section>
@@ -65,7 +65,7 @@
           <label class="dropzone" id="otherDrop">
             <span class="drop-icon">＋</span>
             <strong>Choose or drop not-person images</strong>
-            <small>PNG, JPG, WEBP · max 10 MB each</small>
+            <small>Image files · max 10 MB each</small>
             <input id="otherInput" type="file" accept="image/*" multiple>
           </label>
         </section>
@@ -75,20 +75,31 @@
         <div class="card-title">
           <span class="icon scan-icon">⌕</span>
           <div>
-            <h2>PERSON SCAN · 3 PASSES</h2>
-            <p>Runs detection three times and combines overlapping boxes</p>
+            <h2>PERSON SCAN</h2>
+            <p>Scans every other frame where possible; long clips are sampled less often.</p>
           </div>
         </div>
 
         <label class="scan-pick">
-          Choose image to scan
-          <input id="scanInput" type="file" accept="image/*">
+          Choose image, GIF, or video
+          <input
+            id="scanInput"
+            type="file"
+            accept="image/*,.gif,video/*,.mp4,.webm,.mov,.m4v,.ogv"
+          >
+        </label>
+
+        <label class="toggle-option">
+          <input id="headToggle" type="checkbox">
+          <span class="toggle-ui"></span>
+          <span>Show estimated head boxes</span>
         </label>
 
         <div class="scan-stage" id="scanStage">
-          <img id="scanPreview" alt="Image selected for scanning">
-          <canvas id="boxCanvas" aria-label="Person detection boxes"></canvas>
-          <div id="scanPlaceholder">Your full image appears here</div>
+          <img id="scanPreview" alt="Image or GIF selected for scanning">
+          <video id="scanVideo" muted playsinline preload="metadata"></video>
+          <canvas id="boxCanvas" aria-label="Person and head detection boxes"></canvas>
+          <div id="scanPlaceholder">Your image, GIF, or video appears here</div>
         </div>
 
         <div id="progressArea" class="progress-area" hidden>
@@ -96,7 +107,9 @@
           <div id="progressText">Preparing scan…</div>
         </div>
 
-        <button id="scanButton" class="button primary full" type="button">Scan image 3 times</button>
+        <button id="scanButton" class="button primary full" type="button">
+          Scan image or video
+        </button>
 
         <div class="result">
           <div id="prediction">Ready when you are</div>
@@ -108,7 +121,9 @@
           <button id="correctButton" class="button good" type="button" disabled>Yes</button>
           <button id="incorrectButton" class="button quiet" type="button" disabled>No</button>
         </div>
-        <p id="feedbackNote" class="feedback-note"></p>
+        <p id="feedbackNote" class="feedback-note">
+          Feedback saving is for still images only.
+        </p>
       </section>
     </section>
 
@@ -132,18 +147,16 @@
           <div id="searchPlaceholder">Choose an image to compare</div>
         </div>
 
-        <button id="searchButton" class="button primary full" type="button">Find similar images</button>
+        <button id="searchButton" class="button primary full" type="button">
+          Find similar images
+        </button>
         <div id="searchMessage" class="search-message"></div>
         <div id="searchResults" class="search-results"></div>
       </section>
     </section>
   </main>
 
-  <footer>Made by Ducks_UK And Dennis :3</footer>
-  <script src="/app.js"></script>
-</body>
-</html>
-
+  <footer>Made by Ducks_UK</footer>
   <script src="/app.js"></script>
 </body>
 </html>
