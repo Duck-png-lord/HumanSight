@@ -114,11 +114,51 @@ body[data-theme="cats"] {
 }
 
 .layout {
+  width: min(100% - 32px, 1000px);
+  margin: 0 auto 32px;
+}
+
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+}
+
+.tab-button {
+  flex: 1;
+  min-height: 40px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.tab-button.active {
+  color: #fff;
+  background: var(--primary);
+}
+
+.tab-panel {
+  display: none;
+}
+
+.tab-panel.active {
+  display: block;
+}
+
+.trainer-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
-  width: min(100% - 32px, 1000px);
-  margin: 0 auto 32px;
+  margin-bottom: 18px;
 }
 
 .card {
@@ -131,7 +171,7 @@ body[data-theme="cats"] {
 }
 
 .scan-card {
-  grid-column: 1 / -1;
+  width: 100%;
 }
 
 .card-title {
@@ -157,6 +197,7 @@ body[data-theme="cats"] {
   display: grid;
   width: 39px;
   height: 39px;
+  flex: 0 0 39px;
   place-items: center;
   border-radius: 12px;
   font-weight: 800;
@@ -238,7 +279,7 @@ body[data-theme="cats"] {
 }
 
 .scan-pick input {
-  max-width: 230px;
+  max-width: 250px;
   font-size: 12px;
 }
 
@@ -295,7 +336,8 @@ body[data-theme="dark"] .scan-stage {
   pointer-events: none;
 }
 
-#scanPlaceholder {
+#scanPlaceholder,
+#searchPlaceholder {
   padding: 15px;
   color: var(--muted);
   font-size: 13px;
@@ -330,13 +372,8 @@ body[data-theme="dark"] .scan-stage {
 }
 
 @keyframes progress-move {
-  from {
-    transform: translateX(0);
-  }
-
-  to {
-    transform: translateX(180%);
-  }
+  from { transform: translateX(0); }
+  to { transform: translateX(180%); }
 }
 
 .button {
@@ -413,11 +450,75 @@ body[data-theme="dark"] .scan-stage {
   min-width: 80px;
 }
 
-.feedback-note {
+.feedback-note,
+.search-message {
   min-height: 18px;
   margin: 9px 0 0;
   color: var(--muted);
+  font-size: 13px;
+}
+
+.search-card {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.search-preview-wrap {
+  position: relative;
+  display: flex;
+  min-height: 250px;
+  max-height: 480px;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--soft);
+}
+
+#searchPreview {
+  display: none;
+  max-width: 100%;
+  max-height: 460px;
+  object-fit: contain;
+}
+
+#searchPreview.visible {
+  display: block;
+}
+
+.search-results {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 13px;
+  margin-top: 16px;
+}
+
+.match-card {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+}
+
+.match-card img {
+  display: block;
+  width: 100%;
+  height: 170px;
+  object-fit: contain;
+  background: var(--soft);
+}
+
+.match-details {
+  display: grid;
+  gap: 5px;
+  padding: 11px;
+  overflow-wrap: anywhere;
   font-size: 12px;
+}
+
+.match-details span {
+  color: var(--muted);
 }
 
 footer {
@@ -438,13 +539,12 @@ footer {
   }
 
   .layout {
-    grid-template-columns: 1fr;
     width: min(100% - 22px, 500px);
-    gap: 13px;
   }
 
-  .scan-card {
-    grid-column: auto;
+  .trainer-grid {
+    grid-template-columns: 1fr;
+    gap: 13px;
   }
 
   .card {
@@ -463,5 +563,18 @@ footer {
 
   .scan-pick input {
     max-width: 62%;
+  }
+
+  .search-results {
+    grid-template-columns: 1fr;
+  }
+
+  .match-card {
+    display: grid;
+    grid-template-columns: minmax(100px, 35%) 1fr;
+  }
+
+  .match-card img {
+    height: 125px;
   }
 }
