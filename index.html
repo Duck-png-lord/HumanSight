@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Image Trainer</title>
   <link rel="stylesheet" href="/styles.css">
+
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3"></script>
 </head>
@@ -12,7 +13,7 @@
   <header class="header">
     <div class="eyebrow">IMAGE CLASSIFIER</div>
     <h1>Teach it what to look for.</h1>
-    <p>Upload examples, train automatically, then scan an image.</p>
+    <p>Upload examples, then scan an image for people.</p>
     <div id="status" class="status">Starting…</div>
 
     <label class="theme-picker">
@@ -30,37 +31,44 @@
     <section class="card">
       <div class="card-title">
         <span class="icon person-icon">P</span>
-        <div><h2>TRAINER · Person</h2><p>Images containing a person</p></div>
+        <div>
+          <h2>TRAINER · Person</h2>
+          <p>Images containing a person</p>
+        </div>
       </div>
+
       <label class="dropzone" id="personDrop">
         <span class="drop-icon">＋</span>
         <strong>Choose or drop person images</strong>
         <small>PNG, JPG, WEBP · max 10 MB each</small>
         <input id="personInput" type="file" accept="image/*" multiple>
       </label>
-      <div class="saved-count">Saved examples <b id="personCount">0</b></div>
-      <button id="trainButton" class="button primary full">Train / update model</button>
     </section>
 
     <section class="card">
       <div class="card-title">
         <span class="icon other-icon">N</span>
-        <div><h2>TRAINER · Not Person</h2><p>Images without a person</p></div>
+        <div>
+          <h2>TRAINER · Not Person</h2>
+          <p>Images without a person</p>
+        </div>
       </div>
+
       <label class="dropzone" id="otherDrop">
         <span class="drop-icon">＋</span>
         <strong>Choose or drop not-person images</strong>
         <small>PNG, JPG, WEBP · max 10 MB each</small>
         <input id="otherInput" type="file" accept="image/*" multiple>
       </label>
-      <div class="saved-count">Saved examples <b id="otherCount">0</b></div>
-      <button id="clearButton" class="button quiet full">Clear saved images</button>
     </section>
 
-    <section class="card">
+    <section class="card scan-card">
       <div class="card-title">
         <span class="icon scan-icon">⌕</span>
-        <div><h2>SCAN</h2><p>Detect people and show their locations</p></div>
+        <div>
+          <h2>SCAN</h2>
+          <p>Detect people and show their locations</p>
+        </div>
       </div>
 
       <label class="scan-pick">
@@ -71,15 +79,19 @@
       <div class="scan-stage" id="scanStage">
         <img id="scanPreview" alt="Image selected for scanning">
         <canvas id="boxCanvas" aria-label="Person detection boxes"></canvas>
-        <div id="scanPlaceholder">Your scan image appears here</div>
+        <div id="scanPlaceholder">Your full image appears here</div>
       </div>
 
       <div id="progressArea" class="progress-area" hidden>
-        <div class="progress-track"><div id="progressBar"></div></div>
+        <div class="progress-track">
+          <div id="progressBar"></div>
+        </div>
         <div id="progressText">Preparing scan…</div>
       </div>
 
-      <button id="scanButton" class="button primary full">Scan image</button>
+      <button id="scanButton" class="button primary full" type="button">
+        Scan image
+      </button>
 
       <div class="result">
         <div id="prediction">Ready when you are</div>
@@ -88,14 +100,15 @@
 
       <div class="feedback-title">Was that prediction correct?</div>
       <div class="feedback-buttons">
-        <button id="correctButton" class="button good" disabled>Yes</button>
-        <button id="incorrectButton" class="button quiet" disabled>No</button>
+        <button id="correctButton" class="button good" type="button" disabled>Yes</button>
+        <button id="incorrectButton" class="button quiet" type="button" disabled>No</button>
       </div>
       <p id="feedbackNote" class="feedback-note"></p>
     </section>
   </main>
 
   <footer>Made by Ducks_UK</footer>
+
   <script src="/app.js"></script>
 </body>
 </html>
