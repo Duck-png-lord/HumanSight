@@ -279,8 +279,54 @@ body[data-theme="cats"] {
 }
 
 .scan-pick input {
-  max-width: 250px;
+  max-width: 270px;
   font-size: 12px;
+}
+
+.toggle-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 13px 12px;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.toggle-option input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.toggle-ui {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--border);
+  transition: background 0.2s;
+}
+
+.toggle-ui::after {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: white;
+  content: "";
+  transition: transform 0.2s;
+}
+
+.toggle-option input:checked + .toggle-ui {
+  background: #a855f7;
+}
+
+.toggle-option input:checked + .toggle-ui::after {
+  transform: translateX(16px);
 }
 
 .scan-stage {
@@ -313,7 +359,8 @@ body[data-theme="dark"] .scan-stage {
     linear-gradient(-45deg, transparent 75%, #222432 75%);
 }
 
-#scanPreview {
+#scanPreview,
+#scanVideo {
   display: none;
   position: absolute;
   inset: 0;
@@ -322,8 +369,13 @@ body[data-theme="dark"] .scan-stage {
   object-fit: contain;
 }
 
-#scanPreview.visible {
+#scanPreview.visible,
+#scanVideo.visible {
   display: block;
+}
+
+#scanVideo {
+  background: transparent;
 }
 
 #boxCanvas {
@@ -563,6 +615,10 @@ footer {
 
   .scan-pick input {
     max-width: 62%;
+  }
+
+  .toggle-option {
+    margin-left: 0;
   }
 
   .search-results {
