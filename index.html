@@ -15,7 +15,7 @@
   <header class="header">
     <div class="eyebrow">IMAGE CLASSIFIER</div>
     <h1>Teach it what to look for.</h1>
-    <p>Upload examples, scan people in images, GIFs, or videos, and search saved images.</p>
+    <p>Upload examples, scan people in images, GIFs, or videos, search saved images, or scan with your camera.</p>
     <div id="status" class="status">Starting…</div>
 
     <label class="theme-picker">
@@ -33,6 +33,7 @@
     <nav class="tabs" aria-label="Application tabs">
       <button class="tab-button active" data-tab="trainTab" type="button">Train &amp; Scan</button>
       <button class="tab-button" data-tab="searchTab" type="button">Image Search</button>
+      <button class="tab-button" data-tab="liveTab" type="button">Live Camera</button>
     </nav>
 
     <section id="trainTab" class="tab-panel active">
@@ -178,9 +179,46 @@
         <div id="searchResults" class="search-results"></div>
       </section>
     </section>
+
+    <section id="liveTab" class="tab-panel">
+      <section class="card scan-card">
+        <div class="card-title">
+          <span class="icon scan-icon">●</span>
+          <div>
+            <h2>LIVE PERSON SCAN</h2>
+            <p>Your camera stays off until you press Start. Video detection runs locally in this browser.</p>
+          </div>
+        </div>
+
+        <div class="live-actions">
+          <button id="startCameraButton" class="button primary" type="button">
+            Start camera
+          </button>
+          <button id="stopCameraButton" class="button quiet" type="button" disabled>
+            Stop camera
+          </button>
+
+          <label class="toggle-option">
+            <input id="liveHeadToggle" type="checkbox">
+            <span class="toggle-ui"></span>
+            <span>Show estimated head boxes</span>
+          </label>
+        </div>
+
+        <div class="scan-stage live-stage" id="liveStage">
+          <video id="liveVideo" muted playsinline></video>
+          <canvas id="liveCanvas" aria-label="Live person detection boxes"></canvas>
+          <div id="livePlaceholder">Press “Start camera” to request webcam access</div>
+        </div>
+
+        <p id="liveStatus" class="feedback-note" aria-live="polite">
+          Camera is off. The browser will ask before access is granted.
+        </p>
+      </section>
+    </section>
   </main>
 
-  <footer>Made by Ducks_UK & Dennis :3</footer>
+  <footer>Made by Ducks_UK</footer>
   <script src="/app.js"></script>
 </body>
 </html>
