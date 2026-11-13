@@ -35,6 +35,10 @@ let recordingUrl = null;
 let recordingTimer = null;
 let recordingClock = null;
 let recordingStartedAt = 0;
+let recordingCanvas = null;
+let recordingCanvasContext = null;
+let recordingDrawLoop = null;
+let recordingCanvasStream = null;
 
 const MAX_VIDEO_SCAN_MS = 30000;
 const MAX_VIDEO_FRAMES = 35;
@@ -54,7 +58,9 @@ function setLiveStatus(message) {
 
 function formatTime(seconds) {
   if (!Number.isFinite(seconds) || seconds < 0) seconds = 0;
-  return `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
+  return `${Math.floor(seconds / 60)}:${String(
+    Math.floor(seconds % 60)
+  ).padStart(2, "0")}`;
 }
 
 async function apiRequest(url, options = {}) {
@@ -139,17 +145,19 @@ async function uploadTrainingImages(files, category) {
 
   try {
     setStatus(`Uploading ${images.length} image(s)…`);
+
     await apiRequest(`/api/upload/${category}`, {
       method: "POST",
       body: form
     });
+
     setStatus("Images uploaded.");
   } catch (error) {
     setStatus(`Upload failed: ${error.message}`);
   }
 }
 
-/* Drawing detection boxes */
+/* Detection-box drawing */
 
 function containedRect(stage, sourceWidth, sourceHeight) {
   if (!sourceWidth || !sourceHeight || !stage.clientWidth || !stage.clientHeight) {
@@ -168,7 +176,14 @@ function containedRect(stage, sourceWidth, sourceHeight) {
   };
 }
 
-function drawDetections(canvas, stage, sourceWidth, sourceHeight, results, showHeads) {
+function drawDetections(
+  canvas,
+  stage,
+  sourceWidth,
+  sourceHeight,
+  results,
+  showHeads
+) {
   const dpr = window.devicePixelRatio || 1;
   const width = stage.clientWidth;
   const height = stage.clientHeight;
@@ -198,25 +213,28 @@ function drawDetections(canvas, stage, sourceWidth, sourceHeight, results, showH
 
     const label = `Person ${(result.score * 100).toFixed(0)}%`;
     context.font = "bold 13px system-ui, sans-serif";
+
     const labelWidth = context.measureText(label).width + 12;
-    const labelY = Math.max(0, py - 23);
+    const labelHeight = 23;
+    const labelY = Math.max(0, py - labelHeight);
 
     context.fillStyle = "#17d895";
-    context.fillRect(px, labelY, labelWidth, 23);
+    context.fillRect(px, labelY, labelWidth, labelHeight);
+
     context.fillStyle = "#10251d";
     context.fillText(label, px + 6, labelY + 16);
 
     if (showHeads) {
       const headWidth = boxWidth * 0.48;
       const headHeight = boxHeight * 0.22;
-      const hx = x + (boxWidth - headWidth) / 2;
-      const hy = y + boxHeight * 0.025;
+      const headX = x + (boxWidth - headWidth) / 2;
+      const headY = y + boxHeight * 0.025;
 
       context.lineWidth = 2;
       context.strokeStyle = "#a855f7";
       context.strokeRect(
-        rect.x + hx * rect.scale,
-        rect.y + hy * rect.scale,
+        rect.x + headX * rect.scale,
+        rect.y + headY * rect.scale,
         headWidth * rect.scale,
         headHeight * rect.scale
       );
@@ -229,6 +247,7 @@ function filterPeople(results, width, height) {
 
   return results.filter(item => {
     if (item.class !== "person" || item.score < 0.35) return false;
+
     const [, , boxWidth, boxHeight] = item.bbox;
     return boxWidth / width < 0.98 && boxHeight / height < 0.99;
   });
@@ -283,7 +302,7 @@ function drawLiveBoxes() {
   );
 }
 
-/* File loading helpers */
+/* Media loading */
 
 function waitForMedia(element, successEvent, failureMessage) {
   return new Promise((resolve, reject) => {
@@ -323,7 +342,7 @@ function stopGif() {
   gifAnimationId = null;
 }
 
-/* GIF loading */
+/* GIF loading and playback */
 
 async function loadGif(file) {
   if (!window.gifuct) {
@@ -343,7 +362,7 @@ async function loadGif(file) {
   composed.width = width;
   composed.height = height;
 
-  const ctx = composed.getContext("2d");
+  const context = composed.getContext("2d");
   gifFrames = [];
 
   for (const frame of frames) {
@@ -353,7 +372,7 @@ async function loadGif(file) {
       frame.dims.height
     );
 
-    ctx.putImageData(imageData, frame.dims.left, frame.dims.top);
+    context.putImageData(imageData, frame.dims.left, frame.dims.top);
 
     const frameCanvas = document.createElement("canvas");
     frameCanvas.width = width;
@@ -366,7 +385,7 @@ async function loadGif(file) {
     });
 
     if (frame.disposalType === 2) {
-      ctx.clearRect(
+      context.clearRect(
         frame.dims.left,
         frame.dims.top,
         frame.dims.width,
@@ -459,6 +478,7 @@ function updateMediaControls() {
   if (!hasMedia) return;
 
   const current = Math.min(mediaCurrentTime(), duration);
+
   $("mediaCurrentTime").textContent = formatTime(current);
   $("mediaDuration").textContent = formatTime(duration);
 
@@ -471,8 +491,10 @@ function updateMediaControls() {
       gifAnimationId === null ? "▶" : "❚❚";
   }
 
-  if (!timelineDragging && duration) {
-    $("mediaTimeline").value = String(Math.round(current / duration * 1000));
+  if (!timelineDragging && duration > 0) {
+    $("mediaTimeline").value = String(
+      Math.round(current / duration * 1000)
+    );
   }
 }
 
@@ -509,13 +531,14 @@ async function loadScanFile(file) {
   $("incorrectButton").disabled = true;
   $("confidence").textContent = "";
 
-  const fileIsVideo = file.type.startsWith("video/") ||
+  const isVideo =
+    file.type.startsWith("video/") ||
     /\.(mp4|webm|mov|m4v|ogv)$/i.test(file.name);
 
-  const fileIsGif = file.type === "image/gif" || /\.gif$/i.test(file.name);
+  const isGif = file.type === "image/gif" || /\.gif$/i.test(file.name);
 
   try {
-    if (fileIsVideo) {
+    if (isVideo) {
       scanMode = "video";
 
       const video = $("scanVideo");
@@ -523,12 +546,21 @@ async function loadScanFile(file) {
       video.src = scanUrl;
       video.load();
 
-      await waitForMedia(video, "loadedmetadata", "Could not load video metadata.");
-      await waitForMedia(video, "loadeddata", "Could not read a video frame.");
+      await waitForMedia(
+        video,
+        "loadedmetadata",
+        "Could not load video metadata."
+      );
+
+      await waitForMedia(
+        video,
+        "loadeddata",
+        "Could not read a video frame."
+      );
 
       video.currentTime = 0;
       video.classList.add("visible");
-    } else if (fileIsGif) {
+    } else if (isGif) {
       scanMode = "gif";
       await loadGif(file);
       $("gifCanvas").classList.add("visible");
@@ -537,6 +569,7 @@ async function loadScanFile(file) {
 
       const image = $("scanPreview");
       image.src = scanUrl;
+
       await waitForMedia(image, "load", "Could not load this image.");
       image.classList.add("visible");
     }
@@ -620,12 +653,34 @@ $("mediaTimeline").addEventListener("change", () => {
   updateMediaControls();
 });
 
-/* Run scans */
+/* Scanning */
 
 async function detectScanSource(source) {
   const dimensions = currentScanDimensions();
   const predictions = await detector.detect(source, 20, 0.25);
+
   return filterPeople(predictions, dimensions.width, dimensions.height);
+}
+
+async function seekTo(video, time) {
+  if (Math.abs(video.currentTime - time) < 0.02 && video.readyState >= 2) {
+    return;
+  }
+
+  await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      video.removeEventListener("seeked", onSeeked);
+      reject(new Error("Timed out seeking to a video frame."));
+    }, 5000);
+
+    function onSeeked() {
+      clearTimeout(timeout);
+      resolve();
+    }
+
+    video.addEventListener("seeked", onSeeked, { once: true });
+    video.currentTime = time;
+  });
 }
 
 async function scanVideo() {
@@ -636,7 +691,11 @@ async function scanVideo() {
     throw new Error("Video duration is unavailable.");
   }
 
-  const frameCount = Math.min(MAX_VIDEO_FRAMES, Math.max(1, Math.floor(duration * 1.5)));
+  const frameCount = Math.min(
+    MAX_VIDEO_FRAMES,
+    Math.max(1, Math.floor(duration * 1.5))
+  );
+
   const started = performance.now();
   const resultsByTime = [];
 
@@ -649,18 +708,10 @@ async function scanVideo() {
       ? 0
       : index / (frameCount - 1) * Math.max(0, duration - 0.05);
 
-    video.currentTime = time;
-
-    await new Promise(resolve => {
-      if (Math.abs(video.currentTime - time) < 0.02 && video.readyState >= 2) {
-        resolve();
-        return;
-      }
-
-      video.addEventListener("seeked", resolve, { once: true });
-    });
+    await seekTo(video, time);
 
     const frameDetections = await detectScanSource(video);
+
     resultsByTime.push({ time, detections: frameDetections });
     detections = frameDetections;
     drawScanBoxes();
@@ -668,13 +719,14 @@ async function scanVideo() {
     const percent = Math.round((index + 1) / frameCount * 100);
     $("progressArea").hidden = false;
     $("progressBar").style.width = `${percent}%`;
-    $("progressText").textContent = `Scanning video frame ${index + 1} of ${frameCount}…`;
+    $("progressText").textContent =
+      `Scanning video frame ${index + 1} of ${frameCount}…`;
 
     await new Promise(resolve => setTimeout(resolve, 0));
   }
 
   scanResultsByTime = resultsByTime;
-  video.currentTime = 0;
+  await seekTo(video, 0);
 
   return resultsByTime.flatMap(item => item.detections);
 }
@@ -687,8 +739,8 @@ async function scanGifFrames() {
 
   for (let index = 0; index < gifFrames.length; index += step) {
     showGifFrame(index);
-    const frameDetections = await detectScanSource($("gifCanvas"));
 
+    const frameDetections = await detectScanSource($("gifCanvas"));
     const time = gifFrames
       .slice(0, index)
       .reduce((sum, frame) => sum + frame.delay, 0) / 1000;
@@ -746,8 +798,8 @@ $("scanButton").addEventListener("click", async () => {
 
     if (results.length) {
       predictionLabel = "person";
-      const confidence = Math.max(...results.map(item => item.score));
 
+      const confidence = Math.max(...results.map(item => item.score));
       $("prediction").textContent =
         `${results.length} person detection${results.length === 1 ? "" : "s"} found`;
       $("confidence").textContent =
@@ -880,6 +932,7 @@ $("searchButton").addEventListener("click", async () => {
     }
 
     queryEmbedding = mobileNetModel.infer(preview, true);
+
     const collections = await apiRequest("/api/images");
     const matches = [];
 
@@ -912,15 +965,15 @@ $("searchButton").addEventListener("click", async () => {
 
     matches.sort((a, b) => b.similarity - a.similarity);
 
+    const bestMatches = matches.slice(0, 3);
     const results = $("searchResults");
-    const best = matches.slice(0, 3);
 
-    if (!best.length) {
+    if (!bestMatches.length) {
       $("searchMessage").textContent = "No saved Person images found.";
       return;
     }
 
-    for (const match of best) {
+    for (const match of bestMatches) {
       const card = document.createElement("article");
       card.className = "match-card";
 
@@ -943,7 +996,8 @@ $("searchButton").addEventListener("click", async () => {
       results.append(card);
     }
 
-    $("searchMessage").textContent = "Top matches from your Person collection:";
+    $("searchMessage").textContent =
+      "Top matches from your Person collection:";
   } catch (error) {
     $("searchMessage").textContent = `Search failed: ${error.message}`;
   } finally {
@@ -1029,7 +1083,10 @@ function liveTick() {
 
   liveLoopId = requestAnimationFrame(liveTick);
 
-  if (liveBusy || performance.now() - lastLiveDetection < LIVE_DETECTION_INTERVAL) {
+  if (
+    liveBusy ||
+    performance.now() - lastLiveDetection < LIVE_DETECTION_INTERVAL
+  ) {
     return;
   }
 
@@ -1051,9 +1108,11 @@ function liveTick() {
 
       drawLiveBoxes();
 
-      setLiveStatus(liveDetections.length
-        ? `${liveDetections.length} person${liveDetections.length === 1 ? "" : "s"} detected`
-        : "Camera on. No people detected.");
+      setLiveStatus(
+        liveDetections.length
+          ? `${liveDetections.length} person${liveDetections.length === 1 ? "" : "s"} detected`
+          : "Camera on. No people detected."
+      );
     })
     .catch(error => {
       console.error(error);
@@ -1082,12 +1141,9 @@ function stopCamera() {
   video.classList.remove("visible");
 
   liveDetections = [];
-  $("liveCanvas").getContext("2d").clearRect(
-    0,
-    0,
-    $("liveCanvas").width,
-    $("liveCanvas").height
-  );
+
+  const canvas = $("liveCanvas");
+  canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
 
   $("livePlaceholder").hidden = false;
   $("startCameraButton").disabled = false;
@@ -1099,16 +1155,104 @@ function stopCamera() {
   setLiveStatus("Camera is off.");
 }
 
-/* Recording */
+/* Recording with detection boxes included */
 
-function recordingMimeType() {
-  if (!window.MediaRecorder) return "";
+function supportedRecordingFormat() {
+  if (!window.MediaRecorder) return null;
 
-  return [
-    "video/webm;codecs=vp9",
-    "video/webm;codecs=vp8",
-    "video/webm"
-  ].find(type => MediaRecorder.isTypeSupported(type)) || "";
+  const types = [
+    { mimeType: "video/mp4;codecs=avc1.42E01E", extension: "mp4" },
+    { mimeType: "video/mp4", extension: "mp4" },
+    { mimeType: "video/webm;codecs=vp9", extension: "webm" },
+    { mimeType: "video/webm;codecs=vp8", extension: "webm" },
+    { mimeType: "video/webm", extension: "webm" }
+  ];
+
+  return types.find(type => MediaRecorder.isTypeSupported(type.mimeType)) || null;
+}
+
+function drawRecordingFrame() {
+  if (!recordingCanvas || !recordingCanvasContext) return;
+
+  const video = $("liveVideo");
+  const width = video.videoWidth;
+  const height = video.videoHeight;
+
+  if (width && height) {
+    if (recordingCanvas.width !== width || recordingCanvas.height !== height) {
+      recordingCanvas.width = width;
+      recordingCanvas.height = height;
+    }
+
+    recordingCanvasContext.clearRect(0, 0, width, height);
+
+    // Mirror the camera image like the live preview.
+    recordingCanvasContext.save();
+    recordingCanvasContext.translate(width, 0);
+    recordingCanvasContext.scale(-1, 1);
+    recordingCanvasContext.drawImage(video, 0, 0, width, height);
+    recordingCanvasContext.restore();
+
+    // Detection coordinates are in the original, unmirrored camera frame.
+    for (const result of liveDetections) {
+      const [x, y, boxWidth, boxHeight] = result.bbox;
+      const mirroredX = width - x - boxWidth;
+
+      recordingCanvasContext.lineWidth = Math.max(3, width / 320);
+      recordingCanvasContext.strokeStyle = "#17d895";
+      recordingCanvasContext.strokeRect(
+        mirroredX,
+        y,
+        boxWidth,
+        boxHeight
+      );
+
+      const label = `Person ${(result.score * 100).toFixed(0)}%`;
+      const fontSize = Math.max(14, width / 50);
+      const labelHeight = Math.max(25, width / 45);
+
+      recordingCanvasContext.font =
+        `bold ${fontSize}px system-ui, sans-serif`;
+
+      const labelWidth =
+        recordingCanvasContext.measureText(label).width + 12;
+      const labelY = Math.max(0, y - labelHeight);
+
+      recordingCanvasContext.fillStyle = "#17d895";
+      recordingCanvasContext.fillRect(
+        mirroredX,
+        labelY,
+        labelWidth,
+        labelHeight
+      );
+
+      recordingCanvasContext.fillStyle = "#10251d";
+      recordingCanvasContext.fillText(
+        label,
+        mirroredX + 6,
+        labelY + labelHeight * 0.72
+      );
+
+      if ($("liveHeadToggle").checked) {
+        const headWidth = boxWidth * 0.48;
+        const headHeight = boxHeight * 0.22;
+        const headX =
+          width - (x + (boxWidth - headWidth) / 2) - headWidth;
+        const headY = y + boxHeight * 0.025;
+
+        recordingCanvasContext.lineWidth = Math.max(2, width / 500);
+        recordingCanvasContext.strokeStyle = "#a855f7";
+        recordingCanvasContext.strokeRect(
+          headX,
+          headY,
+          headWidth,
+          headHeight
+        );
+      }
+    }
+  }
+
+  recordingDrawLoop = requestAnimationFrame(drawRecordingFrame);
 }
 
 function startRecording() {
@@ -1117,70 +1261,135 @@ function startRecording() {
     return;
   }
 
-  if (!window.MediaRecorder) {
-    $("recordingStatus").textContent = "Recording is not supported in this browser.";
+  if (!window.MediaRecorder ||
+      !HTMLCanvasElement.prototype.captureStream) {
+    $("recordingStatus").textContent =
+      "Recording with hitboxes is not supported in this browser.";
+    return;
+  }
+
+  const format = supportedRecordingFormat();
+
+  if (!format) {
+    $("recordingStatus").textContent =
+      "This browser does not support MP4 or WebM recording.";
     return;
   }
 
   try {
     if (recordingUrl) URL.revokeObjectURL(recordingUrl);
 
-    recordingUrl = null;
     recordingChunks = [];
+    recordingUrl = null;
     $("recordingDownload").hidden = true;
 
-    const mimeType = recordingMimeType();
+    recordingCanvas = document.createElement("canvas");
+    recordingCanvas.width = $("liveVideo").videoWidth || 640;
+    recordingCanvas.height = $("liveVideo").videoHeight || 480;
+    recordingCanvasContext = recordingCanvas.getContext("2d");
+
+    // Record the canvas composite, which contains both video and boxes.
+    recordingCanvasStream = recordingCanvas.captureStream(30);
+
     mediaRecorder = new MediaRecorder(
-      liveStream,
-      mimeType ? { mimeType } : undefined
+      recordingCanvasStream,
+      { mimeType: format.mimeType }
     );
 
     mediaRecorder.addEventListener("dataavailable", event => {
-      if (event.data?.size) recordingChunks.push(event.data);
+      if (event.data && event.data.size > 0) {
+        recordingChunks.push(event.data);
+      }
     });
 
     mediaRecorder.addEventListener("stop", () => {
-      clearTimeout(recordingTimer);
-      clearInterval(recordingClock);
+      if (recordingDrawLoop !== null) {
+        cancelAnimationFrame(recordingDrawLoop);
+      }
+
+      recordingDrawLoop = null;
+
+      if (recordingCanvasStream) {
+        recordingCanvasStream.getTracks().forEach(track => track.stop());
+      }
+
+      recordingCanvasStream = null;
 
       if (!recordingChunks.length) {
-        $("recordingStatus").textContent = "No recording data was captured.";
+        $("recordingStatus").textContent =
+          "No recording data was captured.";
       } else {
         const blob = new Blob(recordingChunks, {
-          type: mediaRecorder.mimeType || "video/webm"
+          type: format.mimeType
         });
 
         recordingUrl = URL.createObjectURL(blob);
 
         const link = $("recordingDownload");
+        const timestamp = new Date()
+          .toISOString()
+          .replace(/[:.]/g, "-");
+
         link.href = recordingUrl;
-        link.download = `webcam-${new Date().toISOString().replace(/[:.]/g, "-")}.webm`;
+        link.download = `webcam-${timestamp}.${format.extension}`;
+        link.textContent =
+          `Download ${format.extension.toUpperCase()} recording`;
         link.hidden = false;
 
-        $("recordingStatus").textContent = "Recording ready to download.";
+        $("recordingStatus").textContent =
+          "Recording ready. Detection boxes are included.";
       }
+
+      recordingCanvas = null;
+      recordingCanvasContext = null;
+
+      clearTimeout(recordingTimer);
+      clearInterval(recordingClock);
 
       $("startRecordingButton").disabled = !liveRunning;
       $("stopRecordingButton").disabled = true;
     });
 
-    mediaRecorder.start(1000);
-    recordingStartedAt = Date.now();
+    mediaRecorder.addEventListener("error", event => {
+      $("recordingStatus").textContent =
+        `Recording error: ${event.error?.message || "unknown error"}`;
+    });
 
+    drawRecordingFrame();
+    mediaRecorder.start(1000);
+
+    recordingStartedAt = Date.now();
     $("startRecordingButton").disabled = true;
     $("stopRecordingButton").disabled = false;
     $("recordingStatus").textContent = "Recording: 0:00";
 
     recordingClock = setInterval(() => {
-      const seconds = Math.floor((Date.now() - recordingStartedAt) / 1000);
-      $("recordingStatus").textContent = `Recording: ${formatTime(seconds)}`;
+      const seconds = Math.floor(
+        (Date.now() - recordingStartedAt) / 1000
+      );
+
+      $("recordingStatus").textContent =
+        `Recording: ${formatTime(seconds)}`;
     }, 1000);
 
     recordingTimer = setTimeout(() => {
       if (mediaRecorder?.state === "recording") stopRecording();
     }, MAX_RECORDING_MS);
   } catch (error) {
-    $("recordingStatus").textContent = `Could not record: ${error.message}`;
+    console.error(error);
+
+    if (recordingCanvasStream) {
+      recordingCanvasStream.getTracks().forEach(track => track.stop());
+    }
+
+    recordingCanvasStream = null;
+    recordingCanvas = null;
+    recordingCanvasContext = null;
+
+    $("recordingStatus").textContent =
+      `Could not start recording: ${error.message}`;
+    $("startRecordingButton").disabled = !liveRunning;
+    $("stopRecordingButton").disabled = true;
   }
 }
 
@@ -1225,14 +1434,13 @@ document.addEventListener("fullscreenchange", () => {
   });
 });
 
-/* Connect buttons and toggles */
+/* Connect buttons */
 
 $("startCameraButton").addEventListener("click", startCamera);
 $("stopCameraButton").addEventListener("click", stopCamera);
 $("startRecordingButton").addEventListener("click", startRecording);
 $("stopRecordingButton").addEventListener("click", stopRecording);
 $("liveHeadToggle").addEventListener("change", drawLiveBoxes);
-$("headToggle").addEventListener("change", drawScanBoxes);
 
 /* Resize and cleanup */
 
@@ -1252,18 +1460,22 @@ window.addEventListener("pagehide", () => {
   if (scanUrl) URL.revokeObjectURL(scanUrl);
   if (recordingUrl) URL.revokeObjectURL(recordingUrl);
 
-  const preview = $("searchPreview");
-  if (preview.dataset.url) URL.revokeObjectURL(preview.dataset.url);
+  const searchPreview = $("searchPreview");
+  if (searchPreview.dataset.url) {
+    URL.revokeObjectURL(searchPreview.dataset.url);
+  }
 });
 
-/* Load AI models */
+/* Load models */
 
 async function loadModels() {
   try {
     setStatus("Loading AI models…");
 
     if (!window.tf || !window.cocoSsd || !window.mobilenet) {
-      throw new Error("AI scripts did not load. Check your internet connection.");
+      throw new Error(
+        "AI scripts did not load. Check your internet connection."
+      );
     }
 
     [detector, mobileNetModel] = await Promise.all([
