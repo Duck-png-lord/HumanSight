@@ -47,13 +47,11 @@ const LIVE_DETECTION_INTERVAL = 300;
 const MAX_RECORDING_MS = 2 * 60 * 60 * 1000;
 
 function setStatus(message) {
-  const element = $("status");
-  if (element) element.textContent = message;
+  $("status").textContent = message;
 }
 
 function setLiveStatus(message) {
-  const element = $("liveStatus");
-  if (element) element.textContent = message;
+  $("liveStatus").textContent = message;
 }
 
 function formatTime(seconds) {
@@ -157,7 +155,7 @@ async function uploadTrainingImages(files, category) {
   }
 }
 
-/* Detection-box drawing */
+/* Drawing boxes */
 
 function containedRect(stage, sourceWidth, sourceHeight) {
   if (!sourceWidth || !sourceHeight || !stage.clientWidth || !stage.clientHeight) {
@@ -220,7 +218,6 @@ function drawDetections(
 
     context.fillStyle = "#17d895";
     context.fillRect(px, labelY, labelWidth, labelHeight);
-
     context.fillStyle = "#10251d";
     context.fillText(label, px + 6, labelY + 16);
 
@@ -240,6 +237,33 @@ function drawDetections(
       );
     }
   }
+}
+
+function drawHumanSightLogo(canvas, stage, sourceWidth, sourceHeight) {
+  const context = canvas.getContext("2d");
+  const rect = containedRect(stage, sourceWidth, sourceHeight);
+  if (!rect) return;
+
+  const text = "HumanSight";
+  const padding = 8;
+  const boxHeight = 28;
+
+  context.save();
+  context.font = "bold 14px system-ui, sans-serif";
+
+  const boxWidth = context.measureText(text).width + padding * 2;
+  const x = rect.x + sourceWidth * rect.scale - boxWidth - 8;
+  const y = rect.y + sourceHeight * rect.scale - boxHeight - 8;
+
+  context.fillStyle = "rgba(0, 0, 0, 0.68)";
+  context.beginPath();
+  context.roundRect(x, y, boxWidth, boxHeight, 7);
+  context.fill();
+
+  context.fillStyle = "#ffffff";
+  context.textBaseline = "middle";
+  context.fillText(text, x + padding, y + boxHeight / 2);
+  context.restore();
 }
 
 function filterPeople(results, width, height) {
@@ -300,6 +324,13 @@ function drawLiveBoxes() {
     liveDetections,
     $("liveHeadToggle").checked
   );
+
+  drawHumanSightLogo(
+    $("liveCanvas"),
+    $("liveStage"),
+    video.videoWidth,
+    video.videoHeight
+  );
 }
 
 /* Media loading */
@@ -342,7 +373,7 @@ function stopGif() {
   gifAnimationId = null;
 }
 
-/* GIF loading and playback */
+/* GIF */
 
 async function loadGif(file) {
   if (!window.gifuct) {
@@ -653,7 +684,7 @@ $("mediaTimeline").addEventListener("change", () => {
   updateMediaControls();
 });
 
-/* Scanning */
+/* Scan */
 
 async function detectScanSource(source) {
   const dimensions = currentScanDimensions();
@@ -709,7 +740,6 @@ async function scanVideo() {
       : index / (frameCount - 1) * Math.max(0, duration - 0.05);
 
     await seekTo(video, time);
-
     const frameDetections = await detectScanSource(video);
 
     resultsByTime.push({ time, detections: frameDetections });
@@ -1155,12 +1185,12 @@ function stopCamera() {
   setLiveStatus("Camera is off.");
 }
 
-/* Recording with detection boxes included */
+/* Recording with hitboxes and logo */
 
 function supportedRecordingFormat() {
   if (!window.MediaRecorder) return null;
 
-  const types = [
+  const formats = [
     { mimeType: "video/mp4;codecs=avc1.42E01E", extension: "mp4" },
     { mimeType: "video/mp4", extension: "mp4" },
     { mimeType: "video/webm;codecs=vp9", extension: "webm" },
@@ -1168,7 +1198,9 @@ function supportedRecordingFormat() {
     { mimeType: "video/webm", extension: "webm" }
   ];
 
-  return types.find(type => MediaRecorder.isTypeSupported(type.mimeType)) || null;
+  return formats.find(item =>
+    MediaRecorder.isTypeSupported(item.mimeType)
+  ) || null;
 }
 
 function drawRecordingFrame() {
@@ -1186,14 +1218,14 @@ function drawRecordingFrame() {
 
     recordingCanvasContext.clearRect(0, 0, width, height);
 
-    // Mirror the camera image like the live preview.
+    // Mirror the camera image to match the preview.
     recordingCanvasContext.save();
     recordingCanvasContext.translate(width, 0);
     recordingCanvasContext.scale(-1, 1);
     recordingCanvasContext.drawImage(video, 0, 0, width, height);
     recordingCanvasContext.restore();
 
-    // Detection coordinates are in the original, unmirrored camera frame.
+    // Add person boxes to the recorded image.
     for (const result of liveDetections) {
       const [x, y, boxWidth, boxHeight] = result.bbox;
       const mirroredX = width - x - boxWidth;
@@ -1227,10 +1259,11 @@ function drawRecordingFrame() {
       );
 
       recordingCanvasContext.fillStyle = "#10251d";
+      recordingCanvasContext.textBaseline = "middle";
       recordingCanvasContext.fillText(
         label,
         mirroredX + 6,
-        labelY + labelHeight * 0.72
+        labelY + labelHeight / 2
       );
 
       if ($("liveHeadToggle").checked) {
@@ -1250,6 +1283,40 @@ function drawRecordingFrame() {
         );
       }
     }
+
+    // Add the HumanSight logo to the recording.
+    const logoText = "HumanSight";
+    const padding = Math.max(8, width / 100);
+    const logoHeight = Math.max(28, width / 45);
+
+    recordingCanvasContext.save();
+    recordingCanvasContext.font =
+      `bold ${Math.max(14, width / 50)}px system-ui, sans-serif`;
+
+    const logoWidth =
+      recordingCanvasContext.measureText(logoText).width + padding * 2;
+    const logoX = width - logoWidth - 10;
+    const logoY = height - logoHeight - 10;
+
+    recordingCanvasContext.fillStyle = "rgba(0, 0, 0, 0.68)";
+    recordingCanvasContext.beginPath();
+    recordingCanvasContext.roundRect(
+      logoX,
+      logoY,
+      logoWidth,
+      logoHeight,
+      7
+    );
+    recordingCanvasContext.fill();
+
+    recordingCanvasContext.fillStyle = "#ffffff";
+    recordingCanvasContext.textBaseline = "middle";
+    recordingCanvasContext.fillText(
+      logoText,
+      logoX + padding,
+      logoY + logoHeight / 2
+    );
+    recordingCanvasContext.restore();
   }
 
   recordingDrawLoop = requestAnimationFrame(drawRecordingFrame);
@@ -1261,8 +1328,10 @@ function startRecording() {
     return;
   }
 
-  if (!window.MediaRecorder ||
-      !HTMLCanvasElement.prototype.captureStream) {
+  if (
+    !window.MediaRecorder ||
+    !HTMLCanvasElement.prototype.captureStream
+  ) {
     $("recordingStatus").textContent =
       "Recording with hitboxes is not supported in this browser.";
     return;
@@ -1288,7 +1357,7 @@ function startRecording() {
     recordingCanvas.height = $("liveVideo").videoHeight || 480;
     recordingCanvasContext = recordingCanvas.getContext("2d");
 
-    // Record the canvas composite, which contains both video and boxes.
+    // Recording this canvas captures the camera, boxes, and logo together.
     recordingCanvasStream = recordingCanvas.captureStream(30);
 
     mediaRecorder = new MediaRecorder(
@@ -1331,13 +1400,13 @@ function startRecording() {
           .replace(/[:.]/g, "-");
 
         link.href = recordingUrl;
-        link.download = `webcam-${timestamp}.${format.extension}`;
+        link.download = `humansight-${timestamp}.${format.extension}`;
         link.textContent =
           `Download ${format.extension.toUpperCase()} recording`;
         link.hidden = false;
 
         $("recordingStatus").textContent =
-          "Recording ready. Detection boxes are included.";
+          "Recording ready. Boxes and HumanSight logo are included.";
       }
 
       recordingCanvas = null;
@@ -1460,13 +1529,11 @@ window.addEventListener("pagehide", () => {
   if (scanUrl) URL.revokeObjectURL(scanUrl);
   if (recordingUrl) URL.revokeObjectURL(recordingUrl);
 
-  const searchPreview = $("searchPreview");
-  if (searchPreview.dataset.url) {
-    URL.revokeObjectURL(searchPreview.dataset.url);
-  }
+  const preview = $("searchPreview");
+  if (preview.dataset.url) URL.revokeObjectURL(preview.dataset.url);
 });
 
-/* Load models */
+/* Load AI models */
 
 async function loadModels() {
   try {
