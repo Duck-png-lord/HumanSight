@@ -1,10 +1,12 @@
-# Person Image Trainer
+node_modules/
+out/
+.DS_Store
 
-A small Codespaces app with person and not-person upload boxes, a train button,
-and an image scanner.
+# Keep private training images and feedback out of GitHub
+data/person/*
+data/not-person/*
+data/feedback.jsonl
 
-## Start it
-
-```bash
-npm install
-npm start
+# Retain the data folder itself
+!data/person/.gitkeep
+!data/not-person/.gitkeep
