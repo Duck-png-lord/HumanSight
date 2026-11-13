@@ -5,9 +5,13 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 
 const app = express();
+
 const port = Number(process.env.PORT || 3000);
-const host = process.env.HOST || "127.0.0.1";
-const dataRoot = path.resolve(process.env.DATA_DIR || path.join(__dirname, "data"));
+const host = process.env.HOST || "0.0.0.0";
+const dataRoot = path.resolve(
+  process.env.DATA_DIR || path.join(__dirname, "data")
+);
+
 const personDir = path.join(dataRoot, "person");
 const notPersonDir = path.join(dataRoot, "not-person");
 const feedbackFile = path.join(dataRoot, "feedback.jsonl");
@@ -52,18 +56,23 @@ const upload = multer({
   }
 });
 
-function safeImageFiles(directory) {
+function listImages(directory, category) {
   return fs.readdirSync(directory, { withFileTypes: true })
-    .filter(entry => entry.isFile() && /\.(png|jpe?g|gif|webp|bmp)$/i.test(entry.name))
-    .map(entry => entry.name);
-}
-
-function publicImageUrl(category, filename) {
-  return `/data/${category}/${encodeURIComponent(filename)}`;
+    .filter(entry =>
+      entry.isFile() && /\.(png|jpe?g|gif|webp|bmp)$/i.test(entry.name)
+    )
+    .map(entry => ({
+      name: entry.name,
+      url: `/data/${category}/${encodeURIComponent(entry.name)}`
+    }));
 }
 
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));
+});
+
+app.get("/client.js", (req, res) => {
+  res.sendFile(path.join(__dirname, "client.js"));
 });
 
 app.get("/styles.css", (req, res) => {
@@ -75,17 +84,10 @@ app.get("/api/health", (req, res) => {
 });
 
 app.get("/api/images", (req, res) => {
-  const person = safeImageFiles(personDir).map(name => ({
-    name,
-    url: publicImageUrl("person", name)
-  }));
-
-  const notPerson = safeImageFiles(notPersonDir).map(name => ({
-    name,
-    url: publicImageUrl("not-person", name)
-  }));
-
-  res.json({ person, "not-person": notPerson });
+  res.json({
+    person: listImages(personDir, "person"),
+    "not-person": listImages(notPersonDir, "not-person")
+  });
 });
 
 app.post("/api/upload/:label", upload.array("images", 30), (req, res) => {
@@ -145,7 +147,7 @@ app.post("/api/feedback", (req, res) => {
 });
 
 app.get("/data/:category/:filename", (req, res) => {
-  const category = req.params.category;
+  const { category } = req.params;
 
   if (category !== "person" && category !== "not-person") {
     res.sendStatus(404);
@@ -154,14 +156,14 @@ app.get("/data/:category/:filename", (req, res) => {
 
   const filename = path.basename(req.params.filename);
   const directory = category === "person" ? personDir : notPersonDir;
-  const filePath = path.join(directory, filename);
+  const imagePath = path.join(directory, filename);
 
-  if (!fs.existsSync(filePath)) {
+  if (!fs.existsSync(imagePath)) {
     res.sendStatus(404);
     return;
   }
 
-  res.sendFile(filePath);
+  res.sendFile(imagePath);
 });
 
 app.use((error, req, res, next) => {
@@ -176,5 +178,5 @@ app.use((error, req, res, next) => {
 });
 
 app.listen(port, host, () => {
-  console.log(`Image Trainer server at http://${host}:${port}`);
+  console.log(`Image Trainer running at http://localhost:${port}`);
 });
