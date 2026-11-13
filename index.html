@@ -3,19 +3,24 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self' https: data: blob:; script-src 'self' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; connect-src 'self' https:; media-src 'self' blob:;"
+  >
   <title>Image Trainer</title>
   <link rel="stylesheet" href="/styles.css">
 
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1"></script>
-  <script src="https://cdn.jsdelivr.net/npm/gifuct-js@2.1.2/dist/gifuct-js.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/gifuct-js@2.1.2/dist/gifuct-js.min.js"></script>
+  <script defer src="/client.js"></script>
 </head>
 <body data-theme="light">
   <header class="header">
     <div class="eyebrow">IMAGE CLASSIFIER</div>
     <h1>Teach it what to look for.</h1>
-    <p>Upload examples, scan people in images, GIFs, or videos, search saved images, or scan with your camera.</p>
+    <p>Upload examples, scan media, search saved images, or detect people with your webcam.</p>
     <div id="status" class="status">Starting…</div>
 
     <label class="theme-picker">
@@ -46,7 +51,6 @@
               <p>Images containing a person</p>
             </div>
           </div>
-
           <label class="dropzone" id="personDrop">
             <span class="drop-icon">＋</span>
             <strong>Choose or drop person images</strong>
@@ -63,7 +67,6 @@
               <p>Images without a person</p>
             </div>
           </div>
-
           <label class="dropzone" id="otherDrop">
             <span class="drop-icon">＋</span>
             <strong>Choose or drop not-person images</strong>
@@ -78,17 +81,13 @@
           <span class="icon scan-icon">⌕</span>
           <div>
             <h2>PERSON SCAN</h2>
-            <p>Scan an image, GIF, or video. Video scanning has a 30-second best-effort limit.</p>
+            <p>Scan an image, GIF, or video. Video scanning is best-effort and limited to 30 seconds.</p>
           </div>
         </div>
 
         <label class="scan-pick">
           Choose image, GIF, or video
-          <input
-            id="scanInput"
-            type="file"
-            accept="image/*,.gif,video/*,.mp4,.webm,.mov,.m4v,.ogv"
-          >
+          <input id="scanInput" type="file" accept="image/*,.gif,video/*,.mp4,.webm,.mov,.m4v,.ogv">
         </label>
 
         <label class="toggle-option">
@@ -101,16 +100,8 @@
           <img id="scanPreview" alt="Image selected for scanning">
           <video id="scanVideo" muted playsinline preload="metadata"></video>
           <canvas id="gifCanvas" aria-label="GIF preview"></canvas>
-          <canvas id="boxCanvas" aria-label="Person and estimated head detection boxes"></canvas>
-
-          <button
-            id="mediaPlayButton"
-            class="media-play"
-            type="button"
-            aria-label="Play media"
-            hidden
-          >▶</button>
-
+          <canvas id="boxCanvas" aria-label="Person detection boxes"></canvas>
+          <button id="mediaPlayButton" class="media-play" type="button" aria-label="Play media" hidden>▶</button>
           <div id="scanPlaceholder">Your image, GIF, or video appears here</div>
         </div>
 
@@ -125,9 +116,7 @@
           <div id="progressText">Preparing scan…</div>
         </div>
 
-        <button id="scanButton" class="button primary full" type="button">
-          Scan image or video
-        </button>
+        <button id="scanButton" class="button primary full" type="button">Scan image or video</button>
 
         <div class="result">
           <div id="prediction">Ready when you are</div>
@@ -149,7 +138,7 @@
           <span class="icon scan-icon">⌕</span>
           <div>
             <h2>IMAGE SEARCH</h2>
-            <p>Find the three closest-looking images in your Person collection</p>
+            <p>Find the three closest-looking images in your Person collection.</p>
           </div>
         </div>
 
@@ -174,32 +163,17 @@
         <div class="card-title">
           <span class="icon scan-icon">●</span>
           <div>
-            <h2>LIVE CAMERA</h2>
-            <p>Camera processing stays in this browser. Appearance matching is approximate and does not identify faces.</p>
+            <h2>LIVE PERSON DETECTION</h2>
+            <p>Detects people and draws boxes locally. It does not identify anyone.</p>
           </div>
-        </div>
-
-        <div class="appearance-controls">
-          <label class="field-label" for="appearanceName">Match label</label>
-          <input id="appearanceName" class="text-input" type="text" maxlength="40" placeholder="e.g. Blue jacket">
-
-          <label class="field-label" for="appearancePhotos">Reference photos (2–12)</label>
-          <input id="appearancePhotos" class="file-input" type="file" accept="image/*" multiple>
-
-          <div class="appearance-options">
-            <label class="field-label color-label" for="appearanceColor">Box color</label>
-            <input id="appearanceColor" type="color" value="#ff4d6d" aria-label="Appearance match box color">
-            <button id="setAppearanceButton" class="button quiet" type="button">Set appearance match</button>
-            <span id="appearancePhotoCount" class="muted">No reference photos selected</span>
-          </div>
-          <p class="hint">Uses full-person image features, which can vary with clothing, pose, distance, and lighting. It may produce incorrect matches.</p>
         </div>
 
         <div class="live-actions">
           <button id="startCameraButton" class="button primary" type="button">Start camera</button>
           <button id="stopCameraButton" class="button quiet" type="button" disabled>Stop camera</button>
-          <button id="startRecordingButton" class="button good" type="button" disabled>Start recording (max 2 hours)</button>
+          <button id="startRecordingButton" class="button good" type="button" disabled>Start recording</button>
           <button id="stopRecordingButton" class="button quiet" type="button" disabled>Stop recording</button>
+
           <label class="toggle-option">
             <input id="liveHeadToggle" type="checkbox">
             <span class="toggle-ui"></span>
@@ -209,18 +183,17 @@
 
         <div class="scan-stage live-stage" id="liveStage">
           <video id="liveVideo" muted playsinline></video>
-          <canvas id="liveCanvas" aria-label="Live detection and appearance match boxes"></canvas>
+          <canvas id="liveCanvas" aria-label="Live person detection boxes"></canvas>
           <div id="livePlaceholder">Press “Start camera” to request webcam access</div>
         </div>
 
         <p id="recordingStatus" class="feedback-note" aria-live="polite">No recording.</p>
         <a id="recordingDownload" class="recording-download" hidden>Download recording</a>
-        <p id="liveStatus" class="feedback-note" aria-live="polite">Camera is off. The browser will ask before access is granted.</p>
+        <p id="liveStatus" class="feedback-note" aria-live="polite">Camera is off.</p>
       </section>
     </section>
   </main>
 
-  <footer>Made by Ducks_UK</footer>
-  <script src="/app.js"></script>
+  <footer>Made by Ducks_UK and Dennis :3</footer>
 </body>
 </html>
