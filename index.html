@@ -116,14 +116,7 @@
 
         <div id="mediaControls" class="media-controls" hidden>
           <span id="mediaCurrentTime">0:00</span>
-          <input
-            id="mediaTimeline"
-            type="range"
-            min="0"
-            max="1000"
-            value="0"
-            aria-label="Media timeline"
-          >
+          <input id="mediaTimeline" type="range" min="0" max="1000" value="0" aria-label="Media timeline">
           <span id="mediaDuration">0:00</span>
         </div>
 
@@ -146,9 +139,7 @@
           <button id="correctButton" class="button good" type="button" disabled>Yes</button>
           <button id="incorrectButton" class="button quiet" type="button" disabled>No</button>
         </div>
-        <p id="feedbackNote" class="feedback-note">
-          Feedback saving is for still images only.
-        </p>
+        <p id="feedbackNote" class="feedback-note">Feedback saving is for still images only.</p>
       </section>
     </section>
 
@@ -172,9 +163,7 @@
           <div id="searchPlaceholder">Choose an image to compare</div>
         </div>
 
-        <button id="searchButton" class="button primary full" type="button">
-          Find similar images
-        </button>
+        <button id="searchButton" class="button primary full" type="button">Find similar images</button>
         <div id="searchMessage" class="search-message"></div>
         <div id="searchResults" class="search-results"></div>
       </section>
@@ -185,19 +174,32 @@
         <div class="card-title">
           <span class="icon scan-icon">●</span>
           <div>
-            <h2>LIVE PERSON SCAN</h2>
-            <p>Your camera stays off until you press Start. Video detection runs locally in this browser.</p>
+            <h2>LIVE CAMERA</h2>
+            <p>Camera processing stays in this browser. Appearance matching is approximate and does not identify faces.</p>
           </div>
         </div>
 
-        <div class="live-actions">
-          <button id="startCameraButton" class="button primary" type="button">
-            Start camera
-          </button>
-          <button id="stopCameraButton" class="button quiet" type="button" disabled>
-            Stop camera
-          </button>
+        <div class="appearance-controls">
+          <label class="field-label" for="appearanceName">Match label</label>
+          <input id="appearanceName" class="text-input" type="text" maxlength="40" placeholder="e.g. Blue jacket">
 
+          <label class="field-label" for="appearancePhotos">Reference photos (2–12)</label>
+          <input id="appearancePhotos" class="file-input" type="file" accept="image/*" multiple>
+
+          <div class="appearance-options">
+            <label class="field-label color-label" for="appearanceColor">Box color</label>
+            <input id="appearanceColor" type="color" value="#ff4d6d" aria-label="Appearance match box color">
+            <button id="setAppearanceButton" class="button quiet" type="button">Set appearance match</button>
+            <span id="appearancePhotoCount" class="muted">No reference photos selected</span>
+          </div>
+          <p class="hint">Uses full-person image features, which can vary with clothing, pose, distance, and lighting. It may produce incorrect matches.</p>
+        </div>
+
+        <div class="live-actions">
+          <button id="startCameraButton" class="button primary" type="button">Start camera</button>
+          <button id="stopCameraButton" class="button quiet" type="button" disabled>Stop camera</button>
+          <button id="startRecordingButton" class="button good" type="button" disabled>Start recording (max 2 hours)</button>
+          <button id="stopRecordingButton" class="button quiet" type="button" disabled>Stop recording</button>
           <label class="toggle-option">
             <input id="liveHeadToggle" type="checkbox">
             <span class="toggle-ui"></span>
@@ -207,13 +209,13 @@
 
         <div class="scan-stage live-stage" id="liveStage">
           <video id="liveVideo" muted playsinline></video>
-          <canvas id="liveCanvas" aria-label="Live person detection boxes"></canvas>
+          <canvas id="liveCanvas" aria-label="Live detection and appearance match boxes"></canvas>
           <div id="livePlaceholder">Press “Start camera” to request webcam access</div>
         </div>
 
-        <p id="liveStatus" class="feedback-note" aria-live="polite">
-          Camera is off. The browser will ask before access is granted.
-        </p>
+        <p id="recordingStatus" class="feedback-note" aria-live="polite">No recording.</p>
+        <a id="recordingDownload" class="recording-download" hidden>Download recording</a>
+        <p id="liveStatus" class="feedback-note" aria-live="polite">Camera is off. The browser will ask before access is granted.</p>
       </section>
     </section>
   </main>
