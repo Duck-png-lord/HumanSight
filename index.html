@@ -81,7 +81,7 @@
           <span class="icon scan-icon">⌕</span>
           <div>
             <h2>PERSON SCAN</h2>
-            <p>Scan an image, GIF, or video. Video scans are best-effort and limited to 30 seconds.</p>
+            <p>Scan an image, GIF, or video. Video scans are limited to about 30 seconds.</p>
           </div>
         </div>
 
@@ -117,7 +117,6 @@
         </div>
 
         <button id="scanButton" class="button primary full" type="button">Scan image or video</button>
-
         <div class="result">
           <div id="prediction">Ready when you are</div>
           <div id="confidence"></div>
@@ -159,8 +158,8 @@
     </section>
 
     <section id="liveTab" class="tab-panel">
-      <section class="card scan-card">
-        <div class="card-title">
+      <section class="card scan-card live-card">
+        <div class="card-title live-title">
           <span class="icon scan-icon">●</span>
           <div>
             <h2>LIVE PERSON DETECTION</h2>
@@ -173,22 +172,33 @@
           <button id="stopCameraButton" class="button quiet" type="button" disabled>Stop camera</button>
           <button id="startRecordingButton" class="button good" type="button" disabled>Start recording</button>
           <button id="stopRecordingButton" class="button quiet" type="button" disabled>Stop recording</button>
-          <label class="toggle-option">
+
+          <label class="toggle-option live-toggle">
             <input id="liveHeadToggle" type="checkbox">
             <span class="toggle-ui"></span>
             <span>Show estimated head boxes</span>
           </label>
+
+          <button id="fullscreenButton" class="button quiet fullscreen-button" type="button">
+            ⛶ Full screen
+          </button>
         </div>
 
         <div class="scan-stage live-stage" id="liveStage">
           <video id="liveVideo" muted playsinline></video>
           <canvas id="liveCanvas" aria-label="Live person detection boxes"></canvas>
-          <div id="livePlaceholder">Press “Start camera” to request webcam access</div>
+          <div id="livePlaceholder">
+            <span class="camera-placeholder-icon">⌕</span>
+            <strong>Camera is off</strong>
+            <span>Press “Start camera” to request webcam access</span>
+          </div>
         </div>
 
-        <p id="recordingStatus" class="feedback-note" aria-live="polite">No recording.</p>
-        <a id="recordingDownload" class="recording-download" hidden>Download recording</a>
-        <p id="liveStatus" class="feedback-note" aria-live="polite">Camera is off.</p>
+        <div class="live-bottom">
+          <p id="liveStatus" class="feedback-note" aria-live="polite">Camera is off.</p>
+          <p id="recordingStatus" class="feedback-note" aria-live="polite">No recording.</p>
+          <a id="recordingDownload" class="recording-download" hidden>Download recording</a>
+        </div>
       </section>
     </section>
   </main>
