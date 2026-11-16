@@ -3,480 +3,146 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>HumanSight · CCTV Monitor</title>
+  <title>HumanSight</title>
 
   <style>
+    * { box-sizing: border-box; }
+
     :root {
       color-scheme: dark;
-      --bg: #07100e;
-      --panel: #0c1915;
-      --panel-2: #10211b;
-      --line: #214334;
-      --text: #d6e9dd;
-      --muted: #89a999;
-      --accent: #74ff9e;
-      --accent-dark: #153b28;
-      --warning: #ffcf70;
-      --danger: #ff786e;
-      --shadow: 0 16px 48px rgba(0, 0, 0, .34);
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-family: system-ui, sans-serif;
     }
-
-    * { box-sizing: border-box; }
 
     body {
       margin: 0;
       min-height: 100vh;
-      background:
-        radial-gradient(ellipse at 50% 0%, #14271f 0, transparent 55%),
-        var(--bg);
-      color: var(--text);
+      padding: 24px;
+      background: #101713;
+      color: #e8f0eb;
     }
 
-    body[data-theme="light"] {
-      color-scheme: light;
-      --bg: #edf3ef;
-      --panel: #ffffff;
-      --panel-2: #edf5f0;
-      --line: #cedbd2;
-      --text: #17241c;
-      --muted: #566b5d;
-      --accent: #167944;
-      --accent-dark: #dff2e6;
-      --warning: #9b6400;
-      --danger: #b83232;
-      --shadow: 0 16px 48px rgba(30, 60, 40, .12);
-      background: var(--bg);
-    }
+    body[data-theme="light"] { background: #eef2ef; color: #17231b; }
+    body[data-theme="dark"] { background: #08090d; color: #eeeef4; }
+    body[data-theme="pastel"] { background: #f4eafa; color: #382845; }
+    body[data-theme="cats"] { background: #271b25; color: #fff0f5; }
 
-    body[data-theme="pastel"] {
-      color-scheme: light;
-      --bg: #f4efff;
-      --panel: #fffaff;
-      --panel-2: #f0e9fb;
-      --line: #d8c9ed;
-      --text: #332846;
-      --muted: #76678a;
-      --accent: #6c4bb6;
-      --accent-dark: #eee6ff;
-      --warning: #956200;
-      --danger: #b64458;
-      --shadow: 0 16px 48px rgba(80, 55, 110, .12);
-      background: var(--bg);
-    }
+    main { width: min(900px, 100%); margin: auto; }
 
-    body[data-theme="cats"] {
-      color-scheme: light;
-      --bg: #fff2f7;
-      --panel: #fffafd;
-      --panel-2: #fbeaf2;
-      --line: #edcbdc;
-      --text: #482c3b;
-      --muted: #896b7c;
-      --accent: #c34d87;
-      --accent-dark: #fbe2ef;
-      --warning: #956200;
-      --danger: #b64458;
-      --shadow: 0 16px 48px rgba(120, 50, 90, .12);
-      background: var(--bg);
-    }
-
-    button, select { font: inherit; }
-
-    button {
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 11px 15px;
-      background: var(--panel-2);
-      color: var(--text);
-      cursor: pointer;
-      font-weight: 800;
-      transition: filter .15s, transform .15s, opacity .15s;
-    }
-
-    button:hover:not(:disabled) {
-      filter: brightness(1.12);
-      transform: translateY(-1px);
-    }
-
-    button:disabled {
-      cursor: not-allowed;
-      opacity: .48;
-    }
-
-    button.primary {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #07150d;
-    }
-
-    button.stop {
-      color: var(--danger);
-      border-color: color-mix(in srgb, var(--danger) 50%, var(--line));
-    }
-
-    button.download {
-      background: var(--accent-dark);
-      border-color: var(--accent);
-      color: var(--text);
-    }
-
-    .header {
+    header, .controls {
       display: flex;
       align-items: center;
-      gap: 18px;
-      padding: 18px clamp(16px, 4vw, 42px);
-      border-bottom: 1px solid var(--line);
-      background: color-mix(in srgb, var(--panel) 90%, transparent);
-    }
-
-    .brand { margin-right: auto; }
-
-    h1 {
-      margin: 0;
-      font-size: clamp(20px, 3vw, 28px);
-      letter-spacing: .12em;
-    }
-
-    .sub-brand {
-      margin-top: 5px;
-      color: var(--muted);
-      font-size: 11px;
-
-1000
-      letter-spacing: .14em;
-    }
-
-    #status {
-      color: var(--accent);
-      font-size: 12px;
-      text-align: right;
-    }
-
-    .theme-picker {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    select {
-      border: 1px solid var(--line);
-      border-radius: 7px;
-      padding: 9px;
-      background: var(--panel-2);
-      color: var(--text);
-    }
-
-    main {
-      width: min(1120px, calc(100% - 28px));
-      margin: 24px auto;
-    }
-
-    .card {
-      overflow: hidden;
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      background: var(--panel);
-      box-shadow: var(--shadow);
-    }
-
-    .card-head {
-      display: flex;
-      align-items: center;
+      justify-content: space-between;
       gap: 12px;
-      padding: 17px 20px;
-      border-bottom: 1px solid var(--line);
-    }
-
-    .live-indicator {
-      width: 11px;
-      height: 11px;
-      border-radius: 50%;
-      background: var(--danger);
-      box-shadow: 0 0 14px currentColor;
-    }
-
-    body.camera-on .live-indicator {
-      background: var(--accent);
-      animation: pulse 1.4s infinite;
-    }
-
-    @keyframes pulse {
-      50% { opacity: .42; }
-    }
-
-    h2 {
-      margin: 0;
-      font-size: 15px;
-      letter-spacing: .12em;
-    }
-
-    .card-head p {
-      margin: 5px 0 0;
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    .actions {
-      display: flex;
-      align-items: center;
       flex-wrap: wrap;
-      gap: 10px;
-      padding: 14px 18px;
-      border-bottom: 1px solid var(--line);
     }
 
-    .toggle {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-left: auto;
-      color: var(--muted);
-      font-size: 12px;
+    h1 { margin: 0 0 6px; }
+    .muted { opacity: .75; }
+
+    .panel {
+      margin-top: 20px;
+      padding: 18px;
+      border: 1px solid #8885;
+      border-radius: 14px;
+      background: #8881;
     }
 
-    .stage {
+    select, button {
+      border: 1px solid #8888;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font: inherit;
+      color: inherit;
+      background: #8882;
+    }
+
+    button { cursor: pointer; }
+    button:disabled { cursor: not-allowed; opacity: .55; }
+
+    #stage {
       position: relative;
-      display: grid;
-      min-height: 300px;
-      height: min(64vh, 650px);
-      place-items: center;
+      width: 100%;
+      aspect-ratio: 4 / 3;
       overflow: hidden;
-      background:
-        linear-gradient(rgba(45, 105, 70, .08) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(45, 105, 70, .08) 1px, transparent 1px),
-        #030806;
-      background-size: 32px 32px;
+      border-radius: 12px;
+      background: #050706;
     }
 
-    .stage::after {
+    #video, #overlay {
       position: absolute;
-      z-index: 2;
-      pointer-events: none;
-      content: "";
-      inset: 0;
-      background: repeating-linear-gradient(
-        to bottom,
-        transparent 0,
-        transparent 3px,
-        rgba(0, 0, 0, .16) 4px
-      );
-    }
-
-    #liveVideo {
-      display: none;
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      transform: scaleX(-1);
-    }
-
-    #liveVideo.visible { display: block; }
-
-    #liveCanvas {
-      position: absolute;
-      z-index: 3;
       inset: 0;
       width: 100%;
       height: 100%;
-      pointer-events: none;
+      object-fit: cover;
     }
 
-    #livePlaceholder {
+    #video { transform: scaleX(-1); }
+    #overlay { pointer-events: none; }
+
+    #placeholder {
+      position: absolute;
+      inset: 0;
       display: grid;
-      gap: 10px;
-      justify-items: center;
+      place-items: center;
       padding: 20px;
-      color: #9db8a7;
       text-align: center;
+      color: #d9e5dc;
     }
 
-    #livePlaceholder[hidden] { display: none; }
-
-    .camera-icon {
-      color: var(--accent);
-      font-size: 38px;
-    }
-
-    .stage-hud {
-      position: absolute;
-      z-index: 4;
-      top: 12px;
-      left: 12px;
-      display: flex;
-      gap: 8px;
-      pointer-events: none;
-    }
-
-    .hud-label {
-      padding: 6px 8px;
-      border: 1px solid rgba(116, 255, 158, .35);
-      border-radius: 4px;
-      background: rgba(0, 10, 6, .72);
-      color: #8dffb0;
-      font-size: 11px;
-      letter-spacing: .08em;
-    }
-
-    .bottom {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      align-items: center;
-      gap: 8px 16px;
-      padding: 15px 18px;
-    }
-
-    #liveStatus, #bufferStatus, #recordingStatus {
-      margin: 0;
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    #liveStatus { color: var(--text); }
-
-    #recordingStatus {
-      grid-column: 1 / -1;
-      color: var(--accent);
-    }
-
-    footer {
-      padding: 10px 16px 28px;
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.8;
-      text-align: center;
-    }
-
-    footer a {
-      color: var(--accent);
-      text-decoration: none;
-    }
-
-    footer a:hover { text-dec
-1000
-oration: underline; }
-
-    .live-card:fullscreen {
-      display: flex;
-      flex-direction: column;
-      width: 100%;
-      height: 100%;
-      border: 0;
-      border-radius: 0;
-      background: var(--panel);
-    }
-
-    .live-card:fullscreen .stage {
-      flex: 1;
-      height: auto;
-    }
-
-    @media (max-width: 650px) {
-      .header { flex-wrap: wrap; }
-      #status { order: 3; width: 100%; text-align: left; }
-      .theme-picker { margin-left: auto; }
-      .toggle { margin-left: 0; }
-      .stage { height: 55vh; min-height: 240px; }
-      .bottom { grid-template-columns: 1fr; }
-      #recordingStatus { grid-column: auto; }
-    }
+    #placeholder[hidden] { display: none; }
+    #status, #modelStatus { min-height: 1.5em; }
+    #modelStatus { margin-top: 12px; }
   </style>
-
-  <script defer src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3"></script>
-  <script defer src="/client.js"></script>
 </head>
 
-<body data-theme="cctv">
-  <header class="header">
-    <div class="brand">
-      <h1>HUMANSIGHT</h1>
-      <div class="sub-brand">CCTV · LIVE PERSON DETECTION</div>
-    </div>
-
-    <div id="status" role="status">Loading detection model…</div>
-
-    <label class="theme-picker">
-      Theme
-      <select id="themeSelect">
-        <option value="cctv">CCTV Mode</option>
-        <option value="light">Light</option>
-        <option value="dark">Dark</option>
-        <option value="pastel">Pastel</option>
-        <option value="cats">Pastel cat</option>
-      </select>
-    </label>
-  </header>
-
+<body data-theme="dark">
   <main>
-    <section class="card live-card">
-      <div class="card-head">
-        <span class="live-indicator" aria-hidden="true"></span>
+    <header>
+      <div>
+        <h1>HumanSight</h1>
+        <div class="muted">Private, in-browser person detection</div>
+      </div>
+
+      <label>
+        Theme
+        <select id="themeSelect">
+          <option value="dark">Dark</option>
+          <option value="cctv">CCTV green</option>
+          <option value="light">Light</option>
+          <option value="pastel">Pastel</option>
+          <option value="cats">Plum</option>
+        </select>
+      </label>
+    </header>
+
+    <section class="panel">
+      <div class="controls">
         <div>
-          <h2>CAMERA 01 · PERSON DETECTION</h2>
-          <p>Local processing · No identity recognition</p>
+          <button id="startButton" type="button">Start camera</button>
+          <button id="stopButton" type="button" disabled>Stop camera</button>
+          <button id="fullscreenButton" type="button">Full screen</button>
         </div>
       </div>
 
-      <div class="actions">
-        <button id="startCameraButton" class="primary" type="button">
-          Start camera
-        </button>
-        <button id="stopCameraButton" class="stop" type="button" disabled>
-          Stop camera
-        </button>
+      <p id="status" role="status">Loading detection model…</p>
 
-        <label class="toggle">
-          <input id="liveHeadToggle" type="checkbox">
-          <span>Estimated head boxes</span>
-        </label>
-
-        <button id="fullscreenButton" type="button">
-          ⛶ Full screen
-        </button>
+      <div id="stage">
+        <video id="video" autoplay muted playsinline></video>
+        <canvas id="overlay"></canvas>
+        <div id="placeholder">Camera preview will appear here.</div>
       </div>
 
-      <div class="stage" id="liveStage">
-        <video id="liveVideo" muted playsinline></video>
-        <canvas id="liveCanvas" aria-label="Detection boxes"></canvas>
-
-        <div class="stage-hud" aria-hidden="true">
-          <span class="hud-label">● REC BUFFER</span>
-          <span class="hud-label">CAM 01</span>
-        </div>
-
-        <div id="livePlaceholder">
-          <span class="camera-icon">▣</span>
-          <strong>CAMERA OFFLINE</strong>
-          <span>Press Start camera and allow browser camera access.</span>
-        </div>
-      </div>
-
-      <div class="bottom">
-        <p id="liveStatus" aria-live="polite">Camera is off.</p>
-
-        <button id="downloadBufferButton" class="download" type="button" disabled>
-          Download last 60 seconds
-        </button>
-
-        <p id="bufferStatus" aria-live="polite">
-          The rolling buffer starts when the camera starts.
-        </p>
-        <p id="recordingStatus" aria-live="polite">No download in progress.</p>
-      </div>
+      <p id="modelStatus" class="muted">Loading AI model…</p>
+      <p class="muted">
+        Camera access requires HTTPS and permission from your browser.
+        Video is processed in your browser and is not uploaded by this page.
+      </p>
     </section>
   </main>
 
-  <footer>
-    <div>Made by Ducks_UK and Dennis :3</div>
-    <div>
-      <a href="https://www.youtube.com/@Ducks_UK" target="_blank" rel="noopener noreferrer">
-        Ducks_UK on YouTube
-      </a>
-      · Thanks Ducks
-    </div>
-  </footer>
+  <!-- Load libraries before client.js. -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+  <script src="client.js"></script>
 </body>
 </html>
