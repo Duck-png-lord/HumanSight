@@ -16,22 +16,19 @@ let bufferRecorder = null;
 let bufferChunks = [];
 let bufferMimeType = "";
 let bufferStartedAt = 0;
-let bufferTimer = null;
+let buf
+1000
+ferTimer = null;
 let downloadBusy = false;
 
 let recordingCanvas = null;
 let recordingCanvasContext = null;
 let recordingDrawLoop = null;
-let activeExportCanvasStream = null;
-let activeExportRecorder = null;
-let exportChunks = [];
-let exportTimeout = null;
 
 const BUFFER_SECONDS = 60;
 const BUFFER_SLICE_MS = 1000;
 const BUFFER_MAX_BYTES = 100 * 1024 * 1024;
 const LIVE_DETECTION_INTERVAL = 300;
-const EXPORT_TIMEOUT_MS = 30000;
 
 function setStatus(message) {
   $("status").textContent = message;
@@ -74,56 +71,7 @@ function setupTheme() {
 
 /* Detection overlays */
 
-function containedRect(stage, sourceWidth, sourceHeight) {
-  if (
-    !sourceWidth ||
-    !sourceHeight ||
-    !stage.clientWidth ||
-    !stage.clientHeight
-  ) {
-    return null;
-  }
-
-  const scale = Math.min(
-    stage.clientWidth / sourceWidth,
-    stage.clientHeight / sourceHeight
-  );
-
-  return {
-    x: (stage.clientWidth - sourceWidth * scale) / 2,
-    y: (stage.clientHeight - sourceHeight * scale) / 2,
-    scale
-  };
-}
-
-function drawHumanSightLogo(context, x, y, scale = 1) {
-  const text = "HumanSight";
-  const padding = 8 * scale;
-  const height = 28 * scale;
-  const fontSize = 14 * scale;
-
-  context.save();
-  context.font = `bold ${fontSize}px system-ui, sans-serif`;
-
-  const width = context.measureText(text).width + padding * 2;
-
-  context.fillStyle = "rgba(0, 0, 0, 0.68)";
-  context.beginPath();
-  context.roundRect(x, y, width, height, 7 * scale);
-  context.fill();
-
-  context.fillStyle = "#ffffff";
-  context.textBaseline = "middle";
-  context.fillText(text, x + padding, y + height / 2);
-  context.restore();
-
-  return { width, height };
-}
-
-function drawLiveOverlay(context, width, height, options = {}) {
-  const showHeads = $("liveHeadToggle").checked;
-  const mirrorImage = options.mirrorImage === true;
-
+function drawLiveOverlay(context, width, height, mirrorImage = false) {
   context.clearRect(0, 0, width, height);
 
   for (const result of liveDetections) {
@@ -148,42 +96,45 @@ function drawLiveOverlay(context, width, height, options = {}) {
 
     context.fillStyle = "#10251d";
     context.textBaseline = "middle";
-    context.fillText(
-      label,
-      boxX + 6,
-      labelY + labelHeight / 2
-    );
+    context.fillText(label, boxX + 6, labelY + labelHeight / 2);
 
-    if (showHeads) {
+    if ($("liveHeadToggle").checked) {
       const headWidth = boxWidth * 0.48;
       const headHeight = boxHeight * 0.22;
       const headX = x + (boxWidth - headWidth) / 2;
-      const mirroredHeadX = mirrorImage
+      const displayHeadX = mirrorImage
         ? width - headX - headWidth
         : headX;
       const headY = y + boxHeight * 0.025;
 
       context.lineWidth = Math.max(2, width / 500);
       context.strokeStyle = "#a855f7";
-      context.strokeRect(
-        mirroredHeadX,
-        headY,
-        headWidth,
-        headHeight
-      );
+      context.strokeRect(displayHeadX, headY, headWidth, headHeight);
     }
   }
 
-  const logoScale = Math.max(1, width / 640);
-  const logoHeight = 28 * logoScale;
-  const logoY = height - logoHeight - 10 * logoScale;
+  const scale = Math.max(1, width / 640);
+  const text = "HumanSight";
+  const padding = 8 * scale;
+  const logoHeight = 28 * scale;
+  const fontSize = 14 * scale;
 
-  drawHumanSightLogo(
-    context,
-    width - 10 * logoScale,
-    logoY,
-    logoScale
-  );
+  context.save();
+  context.font = `bold ${fontSize}px system-ui, sans-serif`;
+
+  const logoWidth = context.measureText(text).width + padding * 2;
+  const logoX = width - logoWidth - 10 * scale;
+  const logoY = height - logoHeight - 10 * scale;
+
+  context.fillStyle = "rgba(0, 0, 0, 0.68)";
+  context.beginPath();
+  context.roundRect(logoX, logoY, logoWidth, logoHeight, 7 * scale);
+  context.fill();
+
+  context.fillStyle = "#ffffff";
+  context.textBaseline = "middle";
+  context.fillText(text, logoX + padding, logoY + logoHeight / 2);
+  context.restore();
 }
 
 function drawLiveCanvas() {
@@ -193,9 +144,9 @@ function drawLiveCanvas() {
 
   if (!video.videoWidth || !video.videoHeight) return;
 
-  const dpr = window.devicePixelRatio || 1;
   const stageWidth = stage.clientWidth;
   const stageHeight = stage.clientHeight;
+  const dpr = window.devicePixelRatio || 1;
 
   canvas.width = Math.round(stageWidth * dpr);
   canvas.height = Math.round(stageHeight * dpr);
@@ -204,18 +155,24 @@ function drawLiveCanvas() {
 
   const context = canvas.getContext("2d");
   context.setTransform(dpr, 0, 0, dpr, 0, 0);
-  context.clearRect(0, 0, stageWidth, stageHeight);
+  context.clearRect(0,
+1000
+ 0, stageWidth, stageHeight);
 
-  const rect = containedRect(stage, video.videoWidth, video.videoHeight);
-  if (!rect) return;
+  const scale = Math.min(
+    stageWidth / video.videoWidth,
+    stageHeight / video.videoHeight
+  );
 
-  // Draw detection overlays in the same fitted area as the video.
+  const displayWidth = video.videoWidth * scale;
+  const displayHeight = video.videoHeight * scale;
+  const offsetX = (stageWidth - displayWidth) / 2;
+  const offsetY = (stageHeight - displayHeight) / 2;
+
   context.save();
-  context.translate(rect.x, rect.y);
-  context.scale(rect.scale, rect.scale);
-  drawLiveOverlay(context, video.videoWidth, video.videoHeight, {
-    mirrorImage: false
-  });
+  context.translate(offsetX, offsetY);
+  context.scale(scale, scale);
+  drawLiveOverlay(context, video.videoWidth, video.videoHeight, false);
   context.restore();
 }
 
@@ -226,12 +183,11 @@ function filterPeople(results, width, height) {
     if (item.class !== "person" || item.score < 0.35) return false;
 
     const [, , boxWidth, boxHeight] = item.bbox;
-
     return boxWidth / width < 0.98 && boxHeight / height < 0.99;
   });
 }
 
-/* Camera and detection */
+/* Camera */
 
 async function startCamera() {
   if (liveRunning) return;
@@ -242,7 +198,7 @@ async function startCamera() {
   }
 
   if (!modelsReady) {
-    setLiveStatus("Detection model is still loading.");
+    setLiveStatus("Detection model is still loading. Please wait.");
     return;
   }
 
@@ -296,7 +252,7 @@ async function startCamera() {
 
     setLiveStatus(
       error.name === "NotAllowedError"
-        ? "Camera access denied. Allow camera access and try again."
+        ? "Camera access denied. Allow camera permission and try again."
         : `Could not start camera: ${error.message}`
     );
   }
@@ -315,7 +271,6 @@ function liveTick() {
   }
 
   const video = $("liveVideo");
-
   if (!video.videoWidth || video.readyState < 2) return;
 
   liveBusy = true;
@@ -348,12 +303,12 @@ function liveTick() {
     });
 }
 
-/* Rolling 60-second recording buffer */
+/* Rolling 60-second buffer */
 
-function supportedRecordingFormat() {
+function getRecordingFormat() {
   if (!window.MediaRecorder) return null;
 
-  const types = [
+  const formats = [
     { mimeType: "video/mp4;codecs=avc1.42E01E", extension: "mp4" },
     { mimeType: "video/mp4", extension: "mp4" },
     { mimeType: "video/webm;codecs=vp9", extension: "webm" },
@@ -361,11 +316,15 @@ function supportedRecordingFormat() {
     { mimeType: "video/webm", extension: "webm" }
   ];
 
-  return types.find(item => MediaRecorder.isTypeSupported(item.mimeType)) || null;
+  return formats.find(format =>
+    MediaRecorder.isTypeSupported(format.mimeType)
+  ) || null;
 }
 
-function updateBufferStatus() {
-  if (!bufferStartedAt || !bufferRecorder) return;
+functio
+1000
+n updateBufferStatus() {
+  if (!bufferStartedAt) return;
 
   const elapsed = Math.min(
     BUFFER_SECONDS,
@@ -373,7 +332,7 @@ function updateBufferStatus() {
   );
 
   setBufferStatus(
-    `Rolling buffer: ${formatTime(elapsed)} / 1:00. Older video is discarded automatically.`
+    `Rolling buffer: ${formatTime(elapsed)} / 1:00.`
   );
 
   $("downloadBufferButton").disabled = elapsed < 1 || downloadBusy;
@@ -382,17 +341,15 @@ function updateBufferStatus() {
 function startRollingBuffer() {
   stopRollingBuffer();
 
-  const format = supportedRecordingFormat();
-
-  if (!format) {
-    setBufferStatus("This browser does not support video recording.");
-    $("downloadBufferButton").disabled = true;
+  if (!HTMLCanvasElement.prototype.captureStream) {
+    setBufferStatus("This browser does not support canvas recording.");
     return;
   }
 
-  if (!HTMLCanvasElement.prototype.captureStream) {
-    setBufferStatus("Canvas recording is not supported in this browser.");
-    $("downloadBufferButton").disabled = true;
+  const format = getRecordingFormat();
+
+  if (!format) {
+    setBufferStatus("This browser does not support video recording.");
     return;
   }
 
@@ -402,9 +359,6 @@ function startRollingBuffer() {
   recordingCanvas.width = video.videoWidth || 640;
   recordingCanvas.height = video.videoHeight || 480;
   recordingCanvasContext = recordingCanvas.getContext("2d");
-  bufferMimeType = format.mimeType;
-  bufferChunks = [];
-  bufferStartedAt = Date.now();
 
   const canvasStream = recordingCanvas.captureStream(30);
 
@@ -417,16 +371,18 @@ function startRollingBuffer() {
     canvasStream.getTracks().forEach(track => track.stop());
     recordingCanvas = null;
     recordingCanvasContext = null;
-    bufferStartedAt = 0;
 
     console.error(error);
-    setBufferStatus(`Could not start rolling buffer: ${error.message}`);
-    $("downloadBufferButton").disabled = true;
+    setBufferStatus(`Could not start buffer: ${error.message}`);
     return;
   }
 
+  bufferMimeType = format.mimeType;
+  bufferChunks = [];
+  bufferStartedAt = Date.now();
+
   bufferRecorder.addEventListener("dataavailable", event => {
-    if (!event.data || !event.data.size) return;
+    if (!event.data || event.data.size === 0) return;
 
     bufferChunks.push({
       blob: event.data,
@@ -439,7 +395,7 @@ function startRollingBuffer() {
 
   bufferRecorder.addEventListener("error", event => {
     console.error(event.error);
-    setBufferStatus("Recording buffer stopped because of an error.");
+    setBufferStatus("The rolling video buffer encountered an error.");
   });
 
   drawRecordingFrame();
@@ -467,16 +423,17 @@ function drawRecordingFrame() {
       recordingCanvas.height = height;
     }
 
-    // The recorded video, boxes, head boxes, and logo are composited together.
+    recordingCanvasContext.clearRect(0, 0, width, height);
+
+    // The preview is mirrored; mirror the recorded video the same way.
     recordingCanvasContext.save();
     recordingCanvasContext.translate(width, 0);
     recordingCanvasContext.scale(-1, 1);
     recordingCanvasContext.drawImage(video, 0, 0, width, height);
     recordingCanvasContext.restore();
 
-    drawLiveOverlay(recordingCanvasContext, width, height, {
-      mirrorImage: true
-    });
+    // Add detection boxes, optional head boxes, and the watermark to the clip.
+    drawLiveOverlay(recordingCanvasContext, width, height, true);
   }
 
   recordingDrawLoop = requestAnimationFrame(drawRecordingFrame);
@@ -490,7 +447,7 @@ function trimBuffer() {
   }
 
   let totalBytes = bufferChunks.reduce(
-    (total, entry) => total + entry.blob.size,
+    (total, chunk) => total + chunk.blob.size,
     0
   );
 
@@ -508,8 +465,12 @@ function stopRollingBuffer() {
     try {
       bufferRecorder.stop();
     } catch (error) {
-      console.warn("Could not stop rolling recorder:", error);
+      console.warn("Could not stop rolling buffer:", error);
     }
+  }
+
+  if (bufferRecorder?.stream) {
+    bufferRecorder.stream.getTracks().forEach(track => track.stop());
   }
 
   if (recordingDrawLoop !== null) {
@@ -517,78 +478,51 @@ function stopRollingBuffer() {
   }
 
   recordingDrawLoop = null;
-
-  if (bufferRecorder?.stream) {
-    bufferRecorder.stream.getTracks().forEach(track => track.stop());
-  }
-
   bufferRecorder = null;
+  buffer
+1000
+Chunks = [];
+  bufferStartedAt = 0;
   recordingCanvas = null;
   recordingCanvasContext = null;
-  bufferStartedAt = 0;
-  bufferChunks = [];
 
   $("downloadBufferButton").disabled = true;
   setBufferStatus("Rolling buffer stopped.");
 }
 
-function waitForExportStop(recorder) {
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(new Error("Timed out preparing the video download."));
-    }, EXPORT_TIMEOUT_MS);
-
-    recorder.addEventListener("stop", () => {
-      clearTimeout(timeout);
-      resolve();
-    }, { once: true });
-
-    recorder.addEventListener("error", event => {
-      clearTimeout(timeout);
-      reject(event.error || new Error("Video export failed."));
-    }, { once: true });
-  });
-}
-
-async function downloadLast60Seconds() {
+function downloadLast60Seconds() {
   if (downloadBusy) return;
 
   trimBuffer();
 
-  const chunks = bufferChunks.map(entry => entry.blob);
+  const chunks = bufferChunks.map(chunk => chunk.blob);
 
   if (!chunks.length) {
-    $("recordingStatus").textContent =
-      "The rolling buffer is not ready yet.";
-    return;
-  }
-
-  if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) {
-    $("recordingStatus").textContent =
-      "This browser cannot export the rolling video.";
+    $("recordingStatus").textContent = "The buffer is not ready yet.";
     return;
   }
 
   downloadBusy = true;
   $("downloadBufferButton").disabled = true;
-  $("recordingStatus").textContent = "Preparing your last 60 seconds…";
+  $("recordingStatus").textContent = "Preparing your clip…";
 
   try {
-    // Periodic MediaRecorder chunks share one continuous recording stream.
-    // Recombine them with the original MIME type rather than re-encoding.
     const blob = new Blob(chunks, { type: bufferMimeType });
 
-    if (!blob.size) throw new Error("No recorded video data is available.");
+    if (!blob.size) {
+      throw new Error("No recorded video data is available.");
+    }
 
-    const format = supportedRecordingFormat();
+    const format = getRecordingFormat();
     const extension = format?.extension || "webm";
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
 
     link.href = url;
-    link.download = `humansight-last-60-seconds-${new Date()
-      .toISOString()
-      .replace(/[:.]/g, "-")}.${extension}`;
+    link.download =
+      `humansight-last-60-seconds-${new Date()
+        .toISOString()
+        .replace(/[:.]/g, "-")}.${extension}`;
 
     document.body.appendChild(link);
     link.click();
@@ -601,7 +535,7 @@ async function downloadLast60Seconds() {
   } catch (error) {
     console.error(error);
     $("recordingStatus").textContent =
-      `Could not download the buffer: ${error.message}`;
+      `Download failed: ${error.message}`;
   } finally {
     downloadBusy = false;
     updateBufferStatus();
@@ -632,8 +566,7 @@ function stopCamera() {
   liveDetections = [];
 
   const canvas = $("liveCanvas");
-  const context = canvas.getContext("2d");
-  context.clearRect(0, 0, canvas.width, canvas.height);
+  canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
 
   $("livePlaceholder").hidden = false;
   $("startCameraButton").disabled = false;
@@ -658,7 +591,7 @@ async function toggleFullscreen() {
   }
 }
 
-/* Events */
+/* Button events */
 
 $("startCameraButton").addEventListener("click", startCamera);
 $("stopCameraButton").addEventListener("click", stopCamera);
@@ -682,7 +615,7 @@ document.addEventListener("visibilitychange", () => {
 
 window.addEventListener("pagehide", stopCamera);
 
-/* Load detection model */
+/* Load AI model */
 
 async function loadModel() {
   try {
@@ -706,7 +639,40 @@ async function loadModel() {
   }
 }
 
-/* Initialize */
+/* Initialize after page elements exist */
 
-setupTheme();
-loadModel();
+function initialize() {
+  setupTheme();
+
+  $("startC
+3b8
+ameraButton").addEventListener("click", startCamera);
+  $("stopCameraButton").addEventListener("click", stopCamera);
+  $("downloadBufferButton").addEventListener("click", downloadLast60Seconds);
+  $("liveHeadToggle").addEventListener("change", drawLiveCanvas);
+  $("fullscreenButton").addEventListener("click", toggleFullscreen);
+
+  document.addEventListener("fullscreenchange", () => {
+    $("fullscreenButton").textContent = document.fullscreenElement
+      ? "⛶ Exit full screen"
+      : "⛶ Full screen";
+
+    requestAnimationFrame(drawLiveCanvas);
+  });
+
+  window.addEventListener("resize", drawLiveCanvas);
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && liveRunning) stopCamera();
+  });
+
+  window.addEventListener("pagehide", stopCamera);
+
+  loadModel();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initialize, { once: true });
+} else {
+  initialize();
+}
