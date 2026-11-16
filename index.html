@@ -3,23 +3,24 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+
   <meta
     http-equiv="Content-Security-Policy"
     content="default-src 'self' https: data: blob:; script-src 'self' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; connect-src 'self' https:; media-src 'self' blob:;"
   >
+
   <title>HumanSight</title>
   <link rel="stylesheet" href="/styles.css">
 
   <script defer src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/gifuct-js@2.1.2/dist/gifuct-js.min.js"></script>
   <script defer src="/client.js"></script>
 </head>
+
 <body data-theme="light">
   <header class="header">
     <h1>HumanSight</h1>
-    <div id="status" class="status">Starting…</div>
+    <div id="status" class="status">Loading detection model…</div>
 
     <label class="theme-picker">
       Theme
@@ -33,174 +34,81 @@
   </header>
 
   <main class="layout">
-    <nav class="tabs" aria-label="Application tabs">
-      <button class="tab-button active" data-tab="trainTab" type="button">Train &amp; Scan</button>
-      <button class="tab-button" data-tab="searchTab" type="button">Image Search</button>
-      <button class="tab-button" data-tab="liveTab" type="button">Live Camera</button>
-    </nav>
-
-    <section id="trainTab" class="tab-panel active">
-      <div class="trainer-grid">
-        <section class="card">
-          <div class="card-title">
-            <span class="icon person-icon">P</span>
-            <div>
-              <h2>TRAINER · Person</h2>
-              <p>Images containing a person</p>
-            </div>
-          </div>
-          <label class="dropzone" id="personDrop">
-            <span class="drop-icon">＋</span>
-            <strong>Choose or drop person images</strong>
-            <small>Image files · max 10 MB each</small>
-            <input id="personInput" type="file" accept="image/*" multiple>
-          </label>
-        </section>
-
-        <section class="card">
-          <div class="card-title">
-            <span class="icon other-icon">N</span>
-            <div>
-              <h2>TRAINER · Not Person</h2>
-              <p>Images without a person</p>
-            </div>
-          </div>
-          <label class="dropzone" id="otherDrop">
-            <span class="drop-icon">＋</span>
-            <strong>Choose or drop not-person images</strong>
-            <small>Image files · max 10 MB each</small>
-            <input id="otherInput" type="file" accept="image/*" multiple>
-          </label>
-        </section>
+    <section class="card scan-card live-card">
+      <div class="card-title live-title">
+        <span class="icon scan-icon">●</span>
+        <div>
+          <h2>LIVE PERSON DETECTION</h2>
+          <p>Detects people locally. It does not identify anyone.</p>
+        </div>
       </div>
 
-      <section class="card scan-card">
-        <div class="card-title">
-          <span class="icon scan-icon">⌕</span>
-          <div>
-            <h2>PERSON SCAN</h2>
-            <p>Scan an image, GIF, or video. Video scans are limited to about 30 seconds.</p>
-          </div>
-        </div>
+      <div class="live-actions">
+        <button id="startCameraButton" class="button primary" type="button">
+          Start camera
+        </button>
 
-        <label class="scan-pick">
-          Choose image, GIF, or video
-          <input id="scanInput" type="file" accept="image/*,.gif,video/*,.mp4,.webm,.mov,.m4v,.ogv">
-        </label>
+        <button id="stopCameraButton" class="button quiet" type="button" disabled>
+          Stop camera
+        </button>
 
-        <label class="toggle-option">
-          <input id="headToggle" type="checkbox">
+        <label class="toggle-option live-toggle">
+          <input id="liveHeadToggle" type="checkbox">
           <span class="toggle-ui"></span>
           <span>Show estimated head boxes</span>
         </label>
 
-        <div class="scan-stage" id="scanStage">
-          <img id="scanPreview" alt="Image selected for scanning">
-          <video id="scanVideo" muted playsinline preload="metadata"></video>
-          <canvas id="gifCanvas" aria-label="GIF preview"></canvas>
-          <canvas id="boxCanvas" aria-label="Person detection boxes"></canvas>
-          <button id="mediaPlayButton" class="media-play" type="button" aria-label="Play media" hidden>▶</button>
-          <div id="scanPlaceholder">Your image, GIF, or video appears here</div>
+        <button id="fullscreenButton" class="button quiet fullscreen-button" type="button">
+          ⛶ Full screen
+        </button>
+      </div>
+
+      <div class="scan-stage live-stage" id="liveStage">
+        <video id="liveVideo" muted playsinline></video>
+        <canvas id="liveCanvas" aria-label="Live person detection boxes"></canvas>
+
+        <div id="livePlaceholder">
+          <span class="camera-placeholder-icon">⌕</span>
+          <strong>Camera is off</strong>
+          <span>Press “Start camera” to request webcam access</span>
         </div>
+      </div>
 
-        <div id="mediaControls" class="media-controls" hidden>
-          <span id="mediaCurrentTime">0:00</span>
-          <input id="mediaTimeline" type="range" min="0" max="1000" value="0" aria-label="Media timeline">
-          <span id="mediaDuration">0:00</span>
-        </div>
+      <div class="live-bottom">
+        <p id="liveStatus" class="feedback-note" aria-live="polite">
+          Camera is off.
+        </p>
 
-        <div id="progressArea" class="progress-area" hidden>
-          <div class="progress-track"><div id="progressBar"></div></div>
-          <div id="progressText">Preparing scan…</div>
-        </div>
+        <p id="bufferStatus" class="feedback-note" aria-live="polite">
+          Start the camera to begin the 60-second rolling buffer.
+        </p>
 
-        <button id="scanButton" class="button primary full" type="button">Scan image or video</button>
-        <div class="result">
-          <div id="prediction">Ready when you are</div>
-          <div id="confidence"></div>
-        </div>
+        <button
+          id="downloadBufferButton"
+          class="button good"
+          type="button"
+          disabled
+        >
+          Download last 60 seconds
+        </button>
 
-        <div class="feedback-title">Was that prediction correct?</div>
-        <div class="feedback-buttons">
-          <button id="correctButton" class="button good" type="button" disabled>Yes</button>
-          <button id="incorrectButton" class="button quiet" type="button" disabled>No</button>
-        </div>
-        <p id="feedbackNote" class="feedback-note">Feedback saving is for still images only.</p>
-      </section>
-    </section>
-
-    <section id="searchTab" class="tab-panel">
-      <section class="card search-card">
-        <div class="card-title">
-          <span class="icon scan-icon">⌕</span>
-          <div>
-            <h2>IMAGE SEARCH</h2>
-            <p>Find the three closest-looking images in your Person collection.</p>
-          </div>
-        </div>
-
-        <label class="scan-pick">
-          Choose image to search with
-          <input id="searchInput" type="file" accept="image/*">
-        </label>
-
-        <div class="search-preview-wrap">
-          <img id="searchPreview" alt="Image used for similarity search">
-          <div id="searchPlaceholder">Choose an image to compare</div>
-        </div>
-
-        <button id="searchButton" class="button primary full" type="button">Find similar images</button>
-        <div id="searchMessage" class="search-message"></div>
-        <div id="searchResults" class="search-results"></div>
-      </section>
-    </section>
-
-    <section id="liveTab" class="tab-panel">
-      <section class="card scan-card live-card">
-        <div class="card-title live-title">
-          <span class="icon scan-icon">●</span>
-          <div>
-            <h2>LIVE PERSON DETECTION</h2>
-            <p>Detects people and draws boxes locally. It does not identify anyone.</p>
-          </div>
-        </div>
-
-        <div class="live-actions">
-          <button id="startCameraButton" class="button primary" type="button">Start camera</button>
-          <button id="stopCameraButton" class="button quiet" type="button" disabled>Stop camera</button>
-          <button id="startRecordingButton" class="button good" type="button" disabled>Start recording</button>
-          <button id="stopRecordingButton" class="button quiet" type="button" disabled>Stop recording</button>
-
-          <label class="toggle-option live-toggle">
-            <input id="liveHeadToggle" type="checkbox">
-            <span class="toggle-ui"></span>
-            <span>Show estimated head boxes</span>
-          </label>
-
-          <button id="fullscreenButton" class="button quiet fullscreen-button" type="button">
-            ⛶ Full screen
-          </button>
-        </div>
-
-        <div class="scan-stage live-stage" id="liveStage">
-          <video id="liveVideo" muted playsinline></video>
-          <canvas id="liveCanvas" aria-label="Live person detection boxes"></canvas>
-          <div id="livePlaceholder">
-            <span class="camera-placeholder-icon">⌕</span>
-            <strong>Camera is off</strong>
-            <span>Press “Start camera” to request webcam access</span>
-          </div>
-        </div>
-
-        <div class="live-bottom">
-          <p id="liveStatus" class="feedback-note" aria-live="polite">Camera is off.</p>
-          <p id="recordingStatus" class="feedback-note" aria-live="polite">No recording.</p>
-          <a id="recordingDownload" class="recording-download" hidden>Download recording</a>
-        </div>
-      </section>
+        <p id="recordingStatus" class="feedback-note" aria-live="polite">
+          No download in progress.
+        </p>
+      </div>
     </section>
   </main>
 
-  <footer>Made by Ducks_UK and Dennis :3</footer>
+  <footer>
+    <div>Made by Ducks_UK and Dennis :3</div>
+    <div>
+      <a
+        href="https://www.youtube.com/@Ducks_UK"
+        target="_blank"
+        rel="noopener noreferrer"
+      >Ducks_UK on YouTube</a>
+      · Thanks Ducks
+    </div>
+  </footer>
 </body>
 </html>
